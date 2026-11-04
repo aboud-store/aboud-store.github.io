@@ -207,7 +207,7 @@ body.desk .top{top:50px}
 .dk .card{padding:0}
 .dk-hd{display:flex;align-items:center;gap:10px;padding:12px 14px 4px;flex-wrap:wrap}
 .dk-hd h2{font-size:18px;margin:0}.dk-no{background:var(--ac-soft);color:var(--ac);border-radius:7px;padding:2px 9px;font-weight:700;font-family:var(--fd)}
-.dk-hd select{width:260px;padding:9px 10px}.dk-hd .seg{margin-inline-start:auto}.dk-hd .seg button{padding:6px 16px}
+.dk-hd .pbox{max-width:380px}.dk-hd .pbox input{padding:9px 10px}.dk-hd .seg{margin-inline-start:auto}.dk-hd .seg button{padding:6px 16px}
 .dk .qe{padding:8px 14px 0;grid-template-columns:1fr 110px 120px 110px}
 .dk .qe input{height:44px;font-size:15px}.dk .qe .primary{height:44px}
 .dk .qe-i{padding:0 14px 10px}
@@ -593,7 +593,7 @@ function vEditor(){
   const d=S.draft,K=KD[d.kind],cust=K.pt==='c',rt=isRet(d.kind),ps=S.parties.filter(p=>p.type===K.pt);
   return `<div class="ed-h"><button class="ibtn" data-a="cancelinv" aria-label="رجوع">${ICON.back}</button><h2>${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} جديد${rt?'':'ة'}</h2><span class="mut num">#${(S.shop.seq||0)+1}</span></div>
 ${d.ref?`<div class="note" style="margin:0 0 12px">مرتجع من فاتورة ${d.kind==='rsale'?'البيع':'الشراء'} رقم ${d.refNo}. قلّل الكمية للي راجع فعلاً، أو شيل الصنف اللي مش راجع.${S.invoices.find(x=>x.id===d.ref)?.disc?' الأسعار محسوب فيها خصم الفاتورة الأصلية.':''}</div>`:''}
-<label class="f"><span>${cust?'العميل':'المورد'}</span><div style="display:flex;gap:8px"><select id="d_party" ${d.ref?'disabled':''}><option value="">${cust?'عميل نقدي (بدون حساب)':'مورد نقدي (بدون حساب)'}</option>${ps.map(p=>`<option value="${p.id}" ${d.partyId===p.id?'selected':''}>${esc(p.name)}${p.bal?' — '+(p.bal>0?(cust?'عليه ':'ليه '):'')+fmt(Math.abs(p.bal)):''}</option>`).join('')}</select>${d.ref?'':'<button class="ghost" data-a="party" data-fromed="1" style="flex:none">+ جديد</button>'}</div></label>
+<label class="f"><span>${cust?'العميل':'المورد'}</span><div style="display:flex;gap:8px;align-items:flex-start">${partyBox()}${d.ref?'':'<button class="ghost" data-a="party" data-fromed="1" style="flex:none">+ جديد</button>'}</div></label>
 ${d.kind==='sale'?`<div class="seg" style="margin-bottom:12px"><button class="${d.pt==='retail'?'on':''}" data-a="pt" data-k="retail">سعر القطاعي</button><button class="${d.pt==='whole'?'on':''}" data-a="pt" data-k="whole">سعر الجملة</button></div>`:''}
 ${d.ref?'':`<div class="qe"><div class="qe-s"><input id="d_q" placeholder="اسم الصنف أو الكود" value="${esc(d.q)}" autocomplete="off"><div class="list res" id="d_res" hidden></div></div>
 <input id="d_eq" class="money" inputmode="decimal" placeholder="الكمية" value="${esc(d.eq??'1')}" aria-label="الكمية">
@@ -647,7 +647,7 @@ function vEditorDesk(){
   const cashy=d.pm==='drawer'||d.pm==='cash';
   return `<div class="dk"><div class="dk-main">
 <div class="card"><div class="dk-hd"><h2>${rt?KN[d.kind]:'فاتورة '+KN[d.kind]}</h2><span class="dk-no">#${(S.shop.seq||0)+1}</span>
-<span class="mut" style="margin-inline-start:12px">${cust?'العميل':'المورد'}</span><select id="d_party" ${d.ref?'disabled':''}><option value="">${cust?'عميل نقدي (بدون حساب)':'مورد نقدي (بدون حساب)'}</option>${ps.map(p=>`<option value="${p.id}" ${d.partyId===p.id?'selected':''}>${esc(p.name)}${p.bal?' — '+(p.bal>0?(cust?'عليه ':'ليه '):'')+fmt(Math.abs(p.bal)):''}</option>`).join('')}</select>
+<span class="mut" style="margin-inline-start:12px">${cust?'العميل':'المورد'}</span>${partyBox()}
 ${d.ref?'':`<button class="ghost" data-a="party" data-fromed="1" style="padding:8px 12px">+ ${cust?'عميل':'مورد'} جديد</button>`}
 ${d.kind==='sale'?`<div class="seg"><button class="${d.pt!=='whole'?'on':''}" data-a="pt" data-k="retail">قطاعي</button><button class="${d.pt==='whole'?'on':''}" data-a="pt" data-k="whole">جملة</button></div>`:''}</div>
 ${d.ref?`<div class="note" style="margin:8px 14px 12px">مرتجع من فاتورة ${d.kind==='rsale'?'البيع':'الشراء'} رقم ${d.refNo}. قلّل الكمية للي راجع فعلاً، أو شيل الصنف اللي مش راجع.</div>`
@@ -680,6 +680,18 @@ function refreshDesk(){const d=S.draft;syncPay(d);const c=calc(d),t=(id,v)=>{con
   const b=$('#dt_bal');if(b)b.innerHTML=dBal(c);t('dt_chg',fmt(Math.max(0,num(d.tend)-c.cash)));
   const pr=$('#dt_prof');if(pr){pr.textContent=fmt(c.profit);pr.className=c.profit<0?'neg':'pos'}
   const pd=$('#d_paid');if(pd)pd.placeholder=fmt(c.total);t('dk_q',fmt(sum(d.lines,l=>num(l.qty))));t('dk_ld',fmt(sum(d.lines,l=>num(l.disc))))}
+/* customer / supplier picker: type part of the name or phone, pick from the list (empty = cash customer) */
+function partyBox(){const d=S.draft,cust=KD[d.kind].pt==='c',pt=PT(d.partyId);
+  return `<div class="qe-s pbox" style="flex:1;min-width:240px"><input id="d_pq" value="${esc(pt?pt.name:'')}" placeholder="${cust?'اكتب اسم العميل أو موبايله — فاضي = عميل نقدي':'اكتب اسم المورد — فاضي = مورد نقدي'}" autocomplete="off" ${d.ref?'disabled':''}><div class="list res" id="d_pres" hidden></div>
+<div class="mini" id="d_pinf" style="margin-top:3px">${pInfo()}</div></div>`}
+function pInfo(){const d=S.draft,pt=PT(d.partyId),cust=KD[d.kind].pt==='c';if(!pt)return cust?'عميل نقدي (بدون حساب)':'مورد نقدي (بدون حساب)';
+  return `${pt.phone?esc(pt.phone)+' · ':''}${balTxt(pt)}${d.ref?'':` · <a href="#" data-a="pclear" style="color:var(--mut)">شيله (نقدي)</a>`}`}
+function pResHtml(){const d=S.draft,t=KD[d.kind].pt,q=(d.pq||'').trim().toLowerCase();if(!q)return '';
+  const a=S.parties.filter(p=>p.type===t&&(p.name.toLowerCase().includes(q)||(p.phone||'').includes(q))).slice(0,8);
+  return a.map((p,i)=>`<button class="row ${i===(d.phi||0)?'hi':''}" data-a="ppick" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}</div></div><span class="tag">اختار</span></button>`).join('')
+   +`<button class="row" data-a="party" data-fromed="1" data-name="${esc(d.pq.trim())}"><div class="main"><div class="t" style="color:var(--ac)">+ ${t==='c'?'عميل':'مورد'} جديد باسم «${esc(d.pq.trim())}»</div></div></button>`}
+function pPick(id){const d=S.draft;d.partyId=id||'';d.pq='';d.phi=0;
+  if(d.pm==='credit'&&!id)d.pm=defCW(d.kind),d.paid='';render();setTimeout(()=>$('#d_q')?.focus(),0)}
 function resHtml(){
   const d=S.draft,q=d.q.trim().toLowerCase();if(!q)return '';
   const a=S.products.filter(p=>p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase()===q||(p.code||'').toLowerCase().includes(q)).slice(0,8);
@@ -838,10 +850,10 @@ async function saveProduct(id,fromEd){
     if(fromEd){$('#ov').hidden=true;S.sheetOpen=false;render();setTimeout(()=>qPick(p.id),0)}else{closeSheet()}toast('اتحفظ الصنف')});
 }
 
-function partyForm(fromEd){
-  const t=fromEd?(S.draft.kind==='sale'?'c':'s'):S.ptab;
+function partyForm(fromEd,nm){
+  const t=fromEd?KD[S.draft.kind].pt:S.ptab;
   openSheet(`<h3>${t==='c'?'عميل جديد':'مورد جديد'}</h3>
-<label class="f"><span>الاسم</span><input id="c_name"></label>
+<label class="f"><span>الاسم</span><input id="c_name" value="${esc(nm||'')}"></label>
 <label class="f"><span>الموبايل</span><input id="c_phone" inputmode="tel" class="money" placeholder="01xxxxxxxxx"></label>
 <label class="f"><span>${t==='c'?'رصيد قديم عليه (لو فيه)':'رصيد قديم ليه عندنا (لو فيه)'}</span><input id="c_open" class="money" inputmode="decimal" placeholder="0"></label>
 <div id="c_err"></div><button class="primary" data-a="saveparty" data-k="${t}" data-fromed="${fromEd?1:''}" data-save>حفظ</button>`);
@@ -1093,7 +1105,9 @@ document.addEventListener('click',async e=>{
     case 'product':productForm(ds.id,!!ds.fromed);break;
     case 'saveprod':saveProduct(ds.id,!!ds.fromed);break;
     case 'delprod':{const p=P(ds.id);confirmSheet(`هيتمسح «${esc(p.name)}» من المخزن. الفواتير القديمة هتفضل زي ما هي.`,async()=>{await del('products',p.id);closeSheet();toast('اتمسح الصنف')});break}
-    case 'party':partyForm(!!ds.fromed);break;
+    case 'party':partyForm(!!ds.fromed,ds.name);break;
+    case 'ppick':pPick(ds.id);break;
+    case 'pclear':e.preventDefault();pPick('');break;
     case 'saveparty':saveParty(ds.k,!!ds.fromed);break;
     case 'statement':showStatement(ds.id);break;
     case 'editparty':{const p=PT(ds.id);const n=$('#e_name').value.trim();if(!n)break;await guard(()=>put('parties',{...p,name:n,phone:$('#e_phone').value.trim()}));sortAll();toast('اتحفظ');showStatement(p.id);break}
@@ -1126,6 +1140,7 @@ document.addEventListener('input',e=>{
   else if(id==='pq'){S.pq=t.value;const tmp=document.createElement('div');tmp.innerHTML=vParties();$('#plist').innerHTML=tmp.querySelector('#plist').innerHTML}
   else if(id==='d_q'){const d=S.draft;d.q=t.value;d.sel=null;d.hi=0;const r=$('#d_res');r.innerHTML=resHtml();r.hidden=!t.value.trim();$('#d_qi').innerHTML=qeInfo()}
   else if(id==='d_eq'||id==='d_ep'){S.draft[id.slice(2)]=t.value}
+  else if(id==='d_pq'){const d=S.draft;d.pq=t.value;d.phi=0;const r=$('#d_pres');r.innerHTML=pResHtml();r.hidden=!t.value.trim();if(!t.value.trim()&&d.partyId){d.partyId='';$('#d_pinf').innerHTML=pInfo();refreshTotals()}}
   else if(t.dataset.li!=null){const i=+t.dataset.li,l=S.draft.lines[i];l[t.dataset.f]=t.value;$('#lt'+i).textContent=fmt(lineTot(l));$('#lm'+i).innerHTML=lineMeta(l);refreshTotals()}
   else if(['d_disc','d_cash','d_insta','d_paid','d_tend'].includes(id)){S.draft[id.slice(2)]=t.value;refreshTotals()}
   else if(id==='cd_act'||id==='cd_keep')cdSum();
@@ -1145,6 +1160,10 @@ document.addEventListener('submit',e=>{
 });
 document.addEventListener('keydown',e=>{
   const id=e.target.id,d=S.draft;if(!d)return;
+  if(id==='d_pq'){const r=$('#d_pres'),items=[...r.querySelectorAll('[data-a=ppick]')];
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!r.hidden&&items.length){e.preventDefault();d.phi=((d.phi||0)+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((b,i)=>b.classList.toggle('hi',i===d.phi))}
+    else if(e.key==='Enter'){e.preventDefault();if(!r.hidden&&items.length)pPick(items[Math.min(d.phi||0,items.length-1)].dataset.id);else $('#d_q')?.focus()}
+    else if(e.key==='Escape'){r.hidden=true}return}
   if(id==='d_q'){const r=$('#d_res'),items=[...r.querySelectorAll('[data-a=qpick]')];
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!r.hidden&&items.length){e.preventDefault();d.hi=((d.hi||0)+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((b,i)=>b.classList.toggle('hi',i===d.hi));items[d.hi].scrollIntoView({block:'nearest'})}
     else if(e.key==='Enter'){e.preventDefault();if(d.sel){const q=$('#d_eq');q.focus();q.select();return}
@@ -1154,11 +1173,11 @@ document.addEventListener('keydown',e=>{
   else if(id==='d_eq'&&e.key==='Enter'){e.preventDefault();const p=$('#d_ep');p.focus();p.select()}
   else if(id==='d_ep'&&e.key==='Enter'){e.preventDefault();qeAdd()}
 });
-document.addEventListener('focusout',e=>{const t=e.target;if(t.classList?.contains('money')&&t.inputMode==='decimal'&&t.value.trim()!==''){t.value=fmt(num(t.value))}});
+document.addEventListener('focusout',e=>{if(e.target.id==='d_pq')setTimeout(()=>{const r=$('#d_pres');if(r&&document.activeElement?.id!=='d_pq')r.hidden=true;const d=S.draft,pt=d&&PT(d.partyId),q=$('#d_pq');if(q&&d&&!d.pq)q.value=pt?pt.name:''},150);const t=e.target;if(t.classList?.contains('money')&&t.inputMode==='decimal'&&t.value.trim()!==''){t.value=fmt(num(t.value))}});
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
-const APPV='11';let updWait=false;
+const APPV='12';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
   if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
