@@ -1,5 +1,5 @@
 // Aboud Store — offline support
-var CACHE = "aboud-store-v9";
+var CACHE = "aboud-store-v10";
 var CORE = [
   "./", "./index.html", "./manifest.json", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
