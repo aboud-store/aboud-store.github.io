@@ -692,6 +692,12 @@ function pResHtml(){const d=S.draft,t=KD[d.kind].pt,q=(d.pq||'').trim().toLowerC
    +`<button class="row" data-a="party" data-fromed="1" data-name="${esc(d.pq.trim())}"><div class="main"><div class="t" style="color:var(--ac)">+ ${t==='c'?'عميل':'مورد'} جديد باسم «${esc(d.pq.trim())}»</div></div></button>`}
 function pPick(id){const d=S.draft;d.partyId=id||'';d.pq='';d.phi=0;
   if(d.pm==='credit'&&!id)d.pm=defCW(d.kind),d.paid='';render();setTimeout(()=>$('#d_q')?.focus(),0)}
+/* name picker inside collect / pay forms */
+function mResHtml(){const q=($('#m_pq')?.value||'').trim().toLowerCase(),t=S.mpt;if(!q)return '';
+  const a=S.parties.filter(p=>p.type===t&&(p.name.toLowerCase().includes(q)||(p.phone||'').includes(q))).slice(0,8);
+  return a.length?a.map((p,i)=>`<button class="row ${i===(S.mphi||0)?'hi':''}" data-a="mpick" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}</div></div><span class="tag">اختار</span></button>`).join(''):'<div class="empty" style="padding:12px">مفيش حد بالاسم ده.</div>'}
+function mPick(id,keep){const p=PT(id);if(!p)return;S.mpid=id;const q=$('#m_pq');if(q)q.value=p.name;const r=$('#m_pres');if(r)r.hidden=true;
+  const i=$('#m_pinf');if(i)i.innerHTML=`${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}`;$('#m_amt')?.focus()}
 function resHtml(){
   const d=S.draft,q=d.q.trim().toLowerCase();if(!q)return '';
   const a=S.products.filter(p=>p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase()===q||(p.code||'').toLowerCase().includes(q)).slice(0,8);
@@ -800,10 +806,10 @@ function showMove(id){const m=S.moves.find(x=>x.id===id);if(!m)return;
 <button class="danger" data-a="delmove" data-id="${m.id}">امسح الحركة (الخزنة والحساب يرجعوا زي ما كانوا)</button>`)}
 
 function moveForm(t){
-  const isParty=t==='collect'||t==='pay',ps=S.parties.filter(p=>p.type===(t==='collect'?'c':'s'));
+  S.mpt=t==='collect'?'c':'s';const isParty=t==='collect'||t==='pay',ps=S.parties.filter(p=>p.type===(t==='collect'?'c':'s'));
   const tabs=['in','out','transfer','adj'].includes(t)?`<div class="seg" style="margin-bottom:14px">${['in','out','transfer'].map(k=>`<button class="${t===k?'on':''}" data-a="move" data-t="${k}">${{in:'إيداع',out:'سحب',transfer:'تحويل'}[k]}</button>`).join('')}</div>`:'';
   openSheet(`<h3>${MOVE[t]}</h3>${tabs}
-${isParty?`<label class="f"><span>${t==='collect'?'العميل':'المورد'}</span><select id="m_party">${ps.map(p=>`<option value="${p.id}">${esc(p.name)} — ${p.bal>0?(t==='collect'?'عليه ':'ليه '):''}${fmt(p.bal)}</option>`).join('')}</select></label>${ps.length?'':`<div class="err">مفيش ${t==='collect'?'عملاء':'موردين'} لسه. ضيفهم من صفحة الحسابات.</div>`}`:''}
+${isParty?`<label class="f"><span>${t==='collect'?'العميل':'المورد'}</span><div class="qe-s"><input id="m_pq" placeholder="اكتب اسم ${t==='collect'?'العميل':'المورد'} أو موبايله" autocomplete="off"><div class="list res" id="m_pres" hidden></div></div><div class="mini" id="m_pinf" style="margin-top:4px"></div></label>${ps.length?'':`<div class="err">مفيش ${t==='collect'?'عملاء':'موردين'} لسه. ضيفهم من صفحة الحسابات.</div>`}`:''}
 ${t==='expense'?`<label class="f"><span>نوع المصروف</span><select id="m_cat">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></label>`:''}
 <label class="f"><span>المبلغ</span><input id="m_amt" class="money" inputmode="decimal" placeholder="0"></label>
 ${(()=>{const dw=['collect','expense'].includes(t)?'drawer':'cash',seg=(id,on)=>`<div class="seg" id="${id}">${WK.map(k=>`<button class="${k===on?'on':''}" data-a="wsel" data-k="${k}">${W[k]}</button>`).join('')}</div>`;
@@ -819,7 +825,7 @@ async function saveMove(t){
   const m={id:uid(),type:t,amount:amt,method,ts:Date.now(),day:today(),note:$('#m_note').value.trim()};
   if(t==='transfer'){m.to=$('#m_to .on')?.dataset.k||'insta';if(m.to===method)return err('اختار خزنتين مختلفين للتحويل.')}
   if(t==='expense')m.cat=$('#m_cat').value;
-  if(t==='collect'||t==='pay'){const p=PT($('#m_party')?.value);if(!p)return err('اختار الاسم.');m.partyId=p.id;m.partyName=p.name}
+  if(t==='collect'||t==='pay'){const p=PT(S.mpid);if(!p)return err('اكتب الاسم واختاره من القايمة.');m.partyId=p.id;m.partyName=p.name}
   const bal=S.shop[method]||0;
   if(['expense','pay','out','transfer'].includes(t)&&amt>bal&&!S.okNeg){S.okNeg=true;return err(`الموجود في ${W[method]} ${fmt(bal)} بس. لو متأكد اضغط حفظ تاني.`)}
   S.okNeg=false;
@@ -1099,7 +1105,8 @@ document.addEventListener('click',async e=>{
     case 'pimprun':runPImport();break;
     case 'imprun':runImport();break;
     case 'delmove':{const m=S.moves.find(x=>x.id===ds.id);confirmSheet(`هتتمسح حركة «${MOVE[m.type]}» بمبلغ ${fmt(Math.abs(m.amount))}.`,async()=>{await applyMove(m,-1);await del('moves',m.id);closeSheet();toast('اتمسحت الحركة')});break}
-    case 'move':S.okNeg=false;moveForm(ds.t);if(ds.pid)setTimeout(()=>{const s=$('#m_party');if(s)s.value=ds.pid},0);break;
+    case 'move':S.okNeg=false;S.mpid=null;S.mphi=0;moveForm(ds.t);if(ds.pid)setTimeout(()=>mPick(ds.pid,true),0);else setTimeout(()=>$('#m_pq')?.focus(),60);break;
+    case 'mpick':mPick(ds.id);break;
     case 'wsel':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));S.okNeg=false;break;
     case 'savemove':saveMove(ds.t);break;
     case 'product':productForm(ds.id,!!ds.fromed);break;
@@ -1139,6 +1146,7 @@ document.addEventListener('input',e=>{
   else if(id==='sq'){S.sq=t.value;const tmp=document.createElement('div');tmp.innerHTML=vStock();$('#slist').innerHTML=tmp.querySelector('#slist').innerHTML}
   else if(id==='pq'){S.pq=t.value;const tmp=document.createElement('div');tmp.innerHTML=vParties();$('#plist').innerHTML=tmp.querySelector('#plist').innerHTML}
   else if(id==='d_q'){const d=S.draft;d.q=t.value;d.sel=null;d.hi=0;const r=$('#d_res');r.innerHTML=resHtml();r.hidden=!t.value.trim();$('#d_qi').innerHTML=qeInfo()}
+  else if(id==='m_pq'){S.mpid=null;S.mphi=0;const r=$('#m_pres');r.innerHTML=mResHtml();r.hidden=!t.value.trim();$('#m_pinf').innerHTML=''}
   else if(id==='d_eq'||id==='d_ep'){S.draft[id.slice(2)]=t.value}
   else if(id==='d_pq'){const d=S.draft;d.pq=t.value;d.phi=0;const r=$('#d_pres');r.innerHTML=pResHtml();r.hidden=!t.value.trim();if(!t.value.trim()&&d.partyId){d.partyId='';$('#d_pinf').innerHTML=pInfo();refreshTotals()}}
   else if(t.dataset.li!=null){const i=+t.dataset.li,l=S.draft.lines[i];l[t.dataset.f]=t.value;$('#lt'+i).textContent=fmt(lineTot(l));$('#lm'+i).innerHTML=lineMeta(l);refreshTotals()}
@@ -1159,7 +1167,11 @@ document.addEventListener('submit',e=>{
   firebase.auth().signInWithEmailAndPassword($('#l_em').value.trim(),$('#l_pw').value).catch(x=>{$('#l_err').innerHTML=`<div class="err">${loginErr(x.code)}</div>`;btn.disabled=false});
 });
 document.addEventListener('keydown',e=>{
-  const id=e.target.id,d=S.draft;if(!d)return;
+  const id=e.target.id,d=S.draft;
+  if(id==='m_pq'){const r=$('#m_pres'),items=[...r.querySelectorAll('[data-a=mpick]')];
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!r.hidden&&items.length){e.preventDefault();S.mphi=((S.mphi||0)+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((b,i)=>b.classList.toggle('hi',i===S.mphi))}
+    else if(e.key==='Enter'){e.preventDefault();if(items.length)mPick(items[Math.min(S.mphi||0,items.length-1)].dataset.id)}return}
+  if(!d)return;
   if(id==='d_pq'){const r=$('#d_pres'),items=[...r.querySelectorAll('[data-a=ppick]')];
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!r.hidden&&items.length){e.preventDefault();d.phi=((d.phi||0)+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((b,i)=>b.classList.toggle('hi',i===d.phi))}
     else if(e.key==='Enter'){e.preventDefault();if(!r.hidden&&items.length)pPick(items[Math.min(d.phi||0,items.length-1)].dataset.id);else $('#d_q')?.focus()}
@@ -1177,7 +1189,7 @@ document.addEventListener('focusout',e=>{if(e.target.id==='d_pq')setTimeout(()=>
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
-const APPV='12';let updWait=false;
+const APPV='13';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
   if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
