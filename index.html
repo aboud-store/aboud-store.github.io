@@ -744,9 +744,11 @@ async function readImportFile(f){
   const allKw=Object.values(IMPF).flatMap(x=>x[1]);
   let hi=0,best=-1;rows.slice(0,15).forEach((r,i)=>{const sc=r.filter(c=>{const t=String(c).trim().toLowerCase();return t&&allKw.some(k=>t.includes(k))}).length;if(sc>best){best=sc;hi=i}});
   const head=(rows[hi]||[]).map((c,i)=>String(c).trim()||`عمود ${i+1}`);
-  const map={},used=new Set();
-  IMP_ORDER.forEach(k=>{for(const kw of IMPF[k][1]){const i=head.findIndex((h,j)=>!used.has(j)&&h.toLowerCase().includes(kw));if(i>=0){map[k]=i;used.add(i);return}}});
-  IMP={head,data:rows.slice(hi+1).filter(r=>r.some(c=>String(c).trim()!=='')),map,file:f.name};
+  const map={},used=new Set(),data=rows.slice(hi+1).filter(r=>r.some(c=>String(c).trim()!==''));
+  const filled=j=>data.some(r=>String(r[j]??'').trim()!==''),tot=h=>/^(ال)?إجمالي|^اجمالي|^total/i.test(h);
+  /* skip empty columns (e.g. an unused «كود الصنف 1») and «إجمالي …» value columns for prices/cost */
+  IMP_ORDER.forEach(k=>{for(const kw of IMPF[k][1]){const i=head.findIndex((h,j)=>!used.has(j)&&h.toLowerCase().includes(kw)&&filled(j)&&(k==='qty'||k==='name'||!tot(h)));if(i>=0){map[k]=i;used.add(i);return}}});
+  IMP={head,data,map,file:f.name};
   renderImport();
 }
 function impItems(){const {data,map}=IMP;if(map.name==null)return[];
@@ -805,7 +807,8 @@ async function readPImportFile(f){
 function pImpItems(){const {data,map,type}=PIMP;if(map.name==null)return[];
   const g=(r,k)=>map[k]!=null?r[map[k]]:'';
   return data.map(r=>{let bal;if(map.deb!=null||map.cred!=null){const d=num(g(r,'deb')),c=num(g(r,'cred'));bal=type==='c'?d-c:c-d}else bal=num(g(r,'bal'));
-    return{name:String(g(r,'name')).trim(),phone:String(g(r,'phone')).trim(),bal:r2(bal)}}).filter(x=>x.name&&!/^(ال)?إجمالي|^الاجمالي|^total/i.test(x.name));}
+    let ph=String(g(r,'phone')).trim();if(/^1\d{9}$/.test(ph))ph='0'+ph; /* Excel drops the leading 0 of Egyptian mobiles */
+    return{name:String(g(r,'name')).trim(),phone:ph,bal:r2(bal)}}).filter(x=>x.name&&!/^(ال)?إجمالي|^الاجمالي|^اجمالي|^صافي|^total/i.test(x.name));}
 function renderPImport(){
   const it=pImpItems(),body=$('#pimp_body');if(!body)return;const c=PIMP.type==='c';
   const exist=it.filter(x=>S.parties.some(p=>p.type===PIMP.type&&p.name===x.name)).length;
