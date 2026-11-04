@@ -133,6 +133,15 @@ label.f>span{display:block;margin-bottom:4px}
 .ed-h{display:flex;align-items:center;gap:10px;padding-block:14px 8px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:5}
 .ed-h h2{font-size:18px;flex:1}
 .res{margin-top:6px}
+/* quick entry row: item → qty → price → add, like سهل */
+.qe{display:grid;grid-template-columns:1fr 84px 104px auto;gap:8px;align-items:start}
+.qe-s{position:relative;min-width:0}
+.qe-s .res{position:absolute;inset-inline:0;top:100%;z-index:6;max-height:340px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.qe .primary{width:auto;padding:12px 18px}
+.res .row.hi{background:var(--ac-soft)}
+.qe-i{min-height:18px;margin:6px 2px 0}
+@media (max-width:559px){.qe{grid-template-columns:1fr 1fr auto}.qe-s{grid-column:1/-1}}
+@media (min-width:560px){.line{display:grid;grid-template-columns:1fr 300px;column-gap:12px;align-items:center}.line .lin{grid-template-columns:84px 104px 1fr;margin-top:0;grid-row:1/3;grid-column:2}.line .lt{grid-column:1}.line .mini{grid-column:1}}
 .line{padding:11px 13px;border-bottom:1px solid var(--ln)}
 .line:last-child{border-bottom:0}
 .line .lt{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
@@ -496,7 +505,7 @@ ${inv.length>=1000||mv.length>=1000?'<div class="note">الفترة دي فيه�
 }
 
 /* ---------- invoice editor ---------- */
-function newDraft(kind){S.draft={kind,partyId:'',pt:'retail',lines:[],disc:'',cash:'',insta:'',cashW:defCW(kind),note:'',q:''};S.view='inv';render();window.scrollTo(0,0)}
+function newDraft(kind){S.draft={kind,partyId:'',pt:'retail',lines:[],disc:'',cash:'',insta:'',cashW:defCW(kind),note:'',q:'',eq:'1',ep:''};S.view='inv';render();window.scrollTo(0,0);if(matchMedia('(min-width:560px)').matches)setTimeout(()=>$('#d_q')?.focus(),0)}
 async function returnFrom(id){
   const o=await getInv(id);if(!o)return toast('مش لاقي الفاتورة الأصلية');
   const lines=o.lines.map((l,i)=>({pid:l.pid,name:l.name,qty:String(remaining(o,i)),price:String(l.price),cost:l.cost,ri:i,max:remaining(o,i)})).filter(l=>l.max>0);
@@ -514,20 +523,22 @@ function vEditor(){
 ${d.ref?`<div class="note" style="margin:0 0 12px">مرتجع من فاتورة ${d.kind==='rsale'?'البيع':'الشراء'} رقم ${d.refNo}. قلّل الكمية للي راجع فعلاً، أو شيل الصنف اللي مش راجع.${S.invoices.find(x=>x.id===d.ref)?.disc?' الأسعار محسوب فيها خصم الفاتورة الأصلية.':''}</div>`:''}
 <label class="f"><span>${cust?'العميل':'المورد'}</span><div style="display:flex;gap:8px"><select id="d_party" ${d.ref?'disabled':''}><option value="">${cust?'عميل نقدي (بدون حساب)':'مورد نقدي (بدون حساب)'}</option>${ps.map(p=>`<option value="${p.id}" ${d.partyId===p.id?'selected':''}>${esc(p.name)}${p.bal?' — '+(p.bal>0?(cust?'عليه ':'ليه '):'')+fmt(Math.abs(p.bal)):''}</option>`).join('')}</select>${d.ref?'':'<button class="ghost" data-a="party" data-fromed="1" style="flex:none">+ جديد</button>'}</div></label>
 ${d.kind==='sale'?`<div class="seg" style="margin-bottom:12px"><button class="${d.pt==='retail'?'on':''}" data-a="pt" data-k="retail">سعر القطاعي</button><button class="${d.pt==='whole'?'on':''}" data-a="pt" data-k="whole">سعر الجملة</button></div>`:''}
-${d.ref?'':`<input id="d_q" placeholder="ابحث عن صنف بالاسم أو الكود وضيفه" value="${esc(d.q)}" autocomplete="off">
-<div class="list res" id="d_res" ${d.q?'':'hidden'}>${resHtml()}</div>`}
+${d.ref?'':`<div class="qe"><div class="qe-s"><input id="d_q" placeholder="اسم الصنف أو الكود" value="${esc(d.q)}" autocomplete="off"><div class="list res" id="d_res" hidden></div></div>
+<input id="d_eq" class="money" inputmode="decimal" placeholder="الكمية" value="${esc(d.eq??'1')}" aria-label="الكمية">
+<input id="d_ep" class="money" inputmode="decimal" placeholder="السعر" value="${esc(d.ep||'')}" aria-label="السعر">
+<button class="primary" data-a="qeadd">أضف</button></div><div class="mini qe-i" id="d_qi">${qeInfo()}</div>`}
 <div class="sec-h" style="margin-top:16px"><h2>الأصناف</h2><span class="mut">${d.lines.length} صنف</span></div>
 <div class="list" id="d_lines">${d.lines.length?d.lines.map(lineHtml).join(''):'<div class="empty">ابحث فوق وضيف الأصناف.</div>'}</div>
 <div class="sec card" id="d_tot">${totHtml()}</div>
 <label class="f" style="margin-top:12px"><span>ملاحظة (اختياري)</span><input id="d_note" value="${esc(d.note)}"></label>
 <div id="d_err"></div>
-<button class="primary" data-a="saveinv" data-save>حفظ الفاتورة</button>
+${rt?`<button class="primary" data-a="saveinv" data-save>حفظ</button>`:`<div class="grid2"><button class="primary" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button><button class="ghost" data-a="saveinv" data-save>حفظ وخروج</button></div>`}
 <div style="height:24px"></div>`;
 }
 function resHtml(){
   const d=S.draft,q=d.q.trim().toLowerCase();if(!q)return '';
   const a=S.products.filter(p=>p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase()===q||(p.code||'').toLowerCase().includes(q)).slice(0,8);
-  return a.map(p=>`<button class="row" data-a="addline" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">موجود ${fmt(p.qty)} · ${KD[d.kind].pt==='c'?'بيع '+fmt(defPrice(p)):'آخر تكلفة '+fmt(p.lastCost||p.cost)}</div></div><span class="tag">+ إضافة</span></button>`).join('')
+  return a.map((p,i)=>`<button class="row ${i===(d.hi||0)?'hi':''}" data-a="qpick" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">موجود ${fmt(p.qty)} · ${KD[d.kind].pt==='c'?'بيع '+fmt(defPrice(p)):'آخر تكلفة '+fmt(p.lastCost||p.cost)}</div></div><span class="tag">اختار</span></button>`).join('')
    +`<button class="row" data-a="product" data-fromed="1"><div class="main"><div class="t" style="color:var(--ac)">+ صنف جديد باسم «${esc(d.q.trim())}»</div></div></button>`;
 }
 function defPrice(p){const d=S.draft;return KD[d.kind].pt==='c'?(d.pt==='whole'&&p.price2?p.price2:p.price):(p.lastCost||p.cost)}
@@ -554,15 +565,29 @@ ${rt?'':`<label class="f" style="margin:8px 0"><span>خصم</span><input id="d_d
 <div class="quick"><button class="ghost" data-a="payall" data-k="cash">كله كاش</button><button class="ghost" data-a="payall" data-k="insta">كله إنستاباي</button><button class="ghost" data-a="payall" data-k="none">${L[2]}</button></div>
 <div id="d_sum">${sumHtml()}</div>`}
 function sumHtml(){const d=S.draft,c=calc(d),pt=PT(d.partyId),K=KD[d.kind];
+  if(!d.partyId&&!isRet(d.kind)&&!num(d.cash)&&!num(d.insta)&&c.total>0)return `<div class="kv"><span>لو سبت الدفع فاضي</span><b>كله كاش في ${W[d.cashW||'cash']}</b></div>${d.kind==='sale'?`<div class="kv"><span>ربح الفاتورة</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`;
   return `<div class="kv"><span>${PAYL[d.kind][3]}</span><b class="${c.rest>0?'warn':c.rest<0?'neg':''}">${fmt(c.rest)}</b></div>
 ${pt?`<div class="kv"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(pt.bal+K.b*c.rest)}</b></div>`:''}
 ${d.kind==='sale'||d.kind==='rsale'?`<div class="kv"><span>${d.kind==='sale'?'ربح الفاتورة':'الربح اللي هيتخصم'}</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`}
 function refreshTotals(){const s=$('#d_sum');if(s)s.innerHTML=sumHtml();const t=$('#d_tot .kv b');if(t)t.textContent=fmt(calc(S.draft).sub);const tt=$('#d_tot .kv.tot b');if(tt)tt.textContent=fmt(calc(S.draft).total)}
+function qeInfo(){const d=S.draft,p=d&&d.sel&&P(d.sel);if(!p)return 'اكتب اسم الصنف أو كوده، اختاره بـ Enter، وبعدين الكمية والسعر.';
+  return `${esc(p.name)} · المتاح <b class="${p.qty<=0?'neg':''}">${fmt(p.qty)}</b> · ${KD[d.kind].pt==='c'?`قطاعي ${fmt(p.price)}${p.price2?' · جملة '+fmt(p.price2):''}`:`آخر تكلفة ${fmt(p.lastCost||p.cost)}`}`}
+function qPick(id){const p=P(id),d=S.draft;if(!p)return;d.sel=id;d.q=p.name;d.ep=String(defPrice(p));if(!num(d.eq))d.eq='1';
+  const q=$('#d_q');if(q)q.value=p.name;$('#d_res').hidden=true;$('#d_ep').value=fmt(d.ep);$('#d_eq').value=d.eq;$('#d_qi').innerHTML=qeInfo();
+  const e=$('#d_eq');e.focus();e.select()}
+function qeAdd(){const d=S.draft;
+  if(!d.sel){const q=($('#d_q')?.value||'').trim().toLowerCase();const p=q&&S.products.find(x=>(x.code||'').toLowerCase()===q);if(p){qPick(p.id);return}toast('اختار الصنف الأول');$('#d_q')?.focus();return}
+  const p=P(d.sel),qty=num($('#d_eq').value),price=num($('#d_ep').value);if(!p)return;
+  if(!(qty>0)){toast('اكتب الكمية');$('#d_eq').focus();return}
+  const ex=d.lines.find(l=>l.pid===p.id&&num(l.price)===price);
+  if(ex)ex.qty=String(r2(num(ex.qty)+qty));else d.lines.push({pid:p.id,name:p.name,qty:String(qty),price:String(price)});
+  d.sel=null;d.q='';d.eq='1';d.ep='';d.hi=0;render();$('#d_q')?.focus()}
 function addLine(id){const p=P(id),d=S.draft;if(!p)return;
   const ex=d.lines.find(l=>l.pid===id);if(ex)ex.qty=String(num(ex.qty)+1);
   else d.lines.push({pid:id,name:p.name,qty:'1',price:String(defPrice(p))});
   d.q='';render();setTimeout(()=>$('#d_q')?.focus(),0)}
-async function saveInvoice(){
+async function saveInvoice(next){
+  const d0=S.draft;if(!d0.partyId&&!isRet(d0.kind)&&!num(d0.cash)&&!num(d0.insta))d0.cash=String(calc(d0).total); /* cash customer, nothing typed: all paid cash */
   const d=S.draft,c=calc(d),K=KD[d.kind],cust=K.pt==='c',rt=isRet(d.kind),err=$('#d_err');d.note=$('#d_note')?.value||'';
   const fail=m=>{err.innerHTML=`<div class="err">${m}</div>`;err.scrollIntoView({block:'center'})};
   const lines=d.lines.filter(l=>num(l.qty)>0);
@@ -578,6 +603,7 @@ async function saveInvoice(){
     sub:c.sub,disc:c.disc,total:c.total,cash:c.cash,cashW:d.cashW||'cash',insta:c.insta,rest:r2(c.rest),profit:c.profit,note:d.note};
   if(d.ref){inv.ref=d.ref;inv.refNo=d.refNo}
   await guard(async()=>{await applyInvoice(inv,1);await put('invoices',inv);await markReturned(inv,1);
+    if(next){S.draft=null;newDraft(d.kind);if(d.pt)S.draft.pt=d.pt;S.draft.cashW=d.cashW;render();toast(`اتحفظت فاتورة ${KN[d.kind]} رقم ${inv.no} ✓`);setTimeout(()=>$('#d_q')?.focus(),50);return}
     S.draft=null;S.view=d.kind==='sale'?'home':'invoices';S.itab=rt?'ret':d.kind;render();toast(`اتحفظ ${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} رقم ${inv.no}`);showInvoice(inv.id)});
 }
 
@@ -660,7 +686,7 @@ async function saveProduct(id,fromEd){
   const p={...(old||{id:uid(),created:Date.now()}),name,code:$('#p_code').value.trim(),cat:$('#p_cat').value.trim(),cost:num($('#p_cost').value),qty:num($('#p_qty').value),price:num($('#p_price').value),price2:num($('#p_price2').value),min:num($('#p_min').value)};
   if(old&&old.qty!==p.qty)p.adjLog=[...(old.adjLog||[]).slice(-19),{ts:Date.now(),from:old.qty,to:p.qty}];
   await guard(async()=>{await put('products',p);sortAll();
-    if(fromEd){$('#ov').hidden=true;S.sheetOpen=false;addLine(p.id)}else{closeSheet()}toast('اتحفظ الصنف')});
+    if(fromEd){$('#ov').hidden=true;S.sheetOpen=false;render();setTimeout(()=>qPick(p.id),0)}else{closeSheet()}toast('اتحفظ الصنف')});
 }
 
 function partyForm(fromEd){
@@ -868,9 +894,11 @@ document.addEventListener('click',async e=>{
     case 'cancelinv':if(S.draft.lines.length&&!S.sureCancel){S.sureCancel=true;toast('الفاتورة مش محفوظة. اضغط رجوع تاني للخروج');setTimeout(()=>S.sureCancel=false,3000);break}S.sureCancel=false;S.draft=null;S.view='home';render();break;
     case 'pt':S.draft.pt=ds.k;S.draft.lines.forEach(l=>{const p=P(l.pid);if(p)l.price=String(ds.k==='whole'&&p.price2?p.price2:p.price)});render();break;
     case 'addline':addLine(ds.id);break;
+    case 'qpick':qPick(ds.id);break;
+    case 'qeadd':qeAdd();break;
     case 'rmline':S.draft.lines.splice(+ds.i,1);render();break;
     case 'payall':{const c=calc(S.draft);S.draft.cash=ds.k==='cash'?String(c.total):'';S.draft.insta=ds.k==='insta'?String(c.total):'';$('#d_cash').value=S.draft.cash?fmt(c.total):'';$('#d_insta').value=S.draft.insta?fmt(c.total):'';refreshTotals();break}
-    case 'saveinv':saveInvoice();break;
+    case 'saveinv':saveInvoice(ds.k==='new');break;
     case 'showinv':showInvoice(ds.id);break;
     case 'showmove':showMove(ds.id);break;
     case 'delinv':{const i=S.invoices.find(x=>x.id===ds.id);const nm=isRet(i.kind)?KN[i.kind]:'فاتورة '+KN[i.kind];confirmSheet(`هيتمسح ${nm} رقم ${i.no}، والكميات والخزنة ورصيد ${esc(i.partyName)} هيرجعوا زي ما كانوا قبله.`,async()=>{await applyInvoice(i,-1);await del('invoices',i.id);await markReturned(i,-1);closeSheet();toast('اتمسح '+nm)});break}
@@ -917,7 +945,8 @@ document.addEventListener('input',e=>{
   if(id==='iq'){S.iq=t.value;const l=$('#ilist');const v=vInvoices();const tmp=document.createElement('div');tmp.innerHTML=v;l.innerHTML=tmp.querySelector('#ilist').innerHTML}
   else if(id==='sq'){S.sq=t.value;const tmp=document.createElement('div');tmp.innerHTML=vStock();$('#slist').innerHTML=tmp.querySelector('#slist').innerHTML}
   else if(id==='pq'){S.pq=t.value;const tmp=document.createElement('div');tmp.innerHTML=vParties();$('#plist').innerHTML=tmp.querySelector('#plist').innerHTML}
-  else if(id==='d_q'){S.draft.q=t.value;const r=$('#d_res');r.innerHTML=resHtml();r.hidden=!t.value.trim()}
+  else if(id==='d_q'){const d=S.draft;d.q=t.value;d.sel=null;d.hi=0;const r=$('#d_res');r.innerHTML=resHtml();r.hidden=!t.value.trim();$('#d_qi').innerHTML=qeInfo()}
+  else if(id==='d_eq'||id==='d_ep'){S.draft[id.slice(2)]=t.value}
   else if(t.dataset.li!=null){const i=+t.dataset.li,l=S.draft.lines[i];l[t.dataset.f]=t.value;$('#lt'+i).textContent=fmt(num(l.qty)*num(l.price));$('#lm'+i).innerHTML=lineMeta(l);refreshTotals()}
   else if(['d_disc','d_cash','d_insta'].includes(id)){S.draft[id.slice(2)]=t.value;refreshTotals()}
   else if(id==='cd_act'||id==='cd_keep')cdSum();
@@ -936,7 +965,15 @@ document.addEventListener('submit',e=>{
   firebase.auth().signInWithEmailAndPassword($('#l_em').value.trim(),$('#l_pw').value).catch(x=>{$('#l_err').innerHTML=`<div class="err">${loginErr(x.code)}</div>`;btn.disabled=false});
 });
 document.addEventListener('keydown',e=>{
-  if(e.target.id==='d_q'&&e.key==='Enter'){e.preventDefault();const q=e.target.value.trim().toLowerCase();const p=S.products.find(x=>(x.code||'').toLowerCase()===q)||S.products.find(x=>x.name.toLowerCase().includes(q));if(p)addLine(p.id)}
+  const id=e.target.id,d=S.draft;if(!d)return;
+  if(id==='d_q'){const r=$('#d_res'),items=[...r.querySelectorAll('[data-a=qpick]')];
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!r.hidden&&items.length){e.preventDefault();d.hi=((d.hi||0)+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;items.forEach((b,i)=>b.classList.toggle('hi',i===d.hi));items[d.hi].scrollIntoView({block:'nearest'})}
+    else if(e.key==='Enter'){e.preventDefault();if(d.sel){const q=$('#d_eq');q.focus();q.select();return}
+      const q=e.target.value.trim().toLowerCase();if(!q)return;const ex=S.products.find(x=>(x.code||'').toLowerCase()===q);
+      if(ex)qPick(ex.id);else if(items.length)qPick(items[Math.min(d.hi||0,items.length-1)].dataset.id)}
+    else if(e.key==='Escape'){r.hidden=true}}
+  else if(id==='d_eq'&&e.key==='Enter'){e.preventDefault();const p=$('#d_ep');p.focus();p.select()}
+  else if(id==='d_ep'&&e.key==='Enter'){e.preventDefault();qeAdd()}
 });
 document.addEventListener('focusout',e=>{const t=e.target;if(t.classList?.contains('money')&&t.inputMode==='decimal'&&t.value.trim()!==''){t.value=fmt(num(t.value))}});
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
