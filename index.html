@@ -193,7 +193,7 @@ pre.share{white-space:pre-wrap;background:var(--sf);border:1px solid var(--ln);b
 /* printed invoice */
 #print{display:none}
 @media print{body>*:not(#print){display:none!important}#print{display:block!important}body{background:#fff!important}}
-.pv{color:#000;font-family:var(--fb);direction:rtl;font-size:13px;line-height:1.45}
+.pv{padding:12mm;color:#000;font-family:var(--fb);direction:rtl;font-size:13px;line-height:1.45}
 .pv h1{font-family:var(--fd);font-size:22px;margin:0;text-align:center}
 .pv .sub{text-align:center;font-size:12px;margin:2px 0}
 .pv .ttl{text-align:center;font-weight:700;font-size:15px;margin:10px 0 6px;border-block:1.5px solid #000;padding:4px 0}
@@ -206,7 +206,7 @@ pre.share{white-space:pre-wrap;background:var(--sf);border:1px solid var(--ln);b
 .pv .tot div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #999}
 .pv .tot .big{font-weight:700;font-size:15px;border-bottom:1.5px solid #000}
 .pv .foot{text-align:center;margin-top:12px;font-size:12px}
-.pv.r80{width:70mm;font-size:12px;font-weight:600}.pv.r80 b,.pv.r80 .big{font-weight:800}.pv.r80 h1{font-size:17px}.pv.r80 .meta{grid-template-columns:1fr}.pv.r80 .tot{width:100%}
+.pv.r80{padding:2mm 1mm;width:70mm;font-size:12px;font-weight:600}.pv.r80 b,.pv.r80 .big{font-weight:800}.pv.r80 h1{font-size:17px}.pv.r80 .meta{grid-template-columns:1fr}.pv.r80 .tot{width:100%}
 .pv.r80 th,.pv.r80 td{border:0;border-bottom:1px dashed #000;padding:3px 2px}.pv.r80 th{background:none}
 </style>
 </head>
@@ -794,7 +794,7 @@ ${rt?`${paid?`<div><span>اترجع فلوس</span><b>${fmt(paid)}</b></div>`:''
 ${pt&&i.balBefore!=null?`<div><span>الرصيد السابق</span><b>${fmt(i.balBefore)}</b></div><div class="big"><span>${cust?'إجمالي المطلوب على الحساب':'الرصيد بعد الفاتورة'}</span><b>${fmt(i.balAfter)}</b></div>`:''}</div>
 ${i.note?`<div style="margin-top:8px">ملاحظة: ${esc(i.note)}</div>`:''}
 <div class="foot">${esc(sh.foot||'شكراً لتعاملكم معنا')}</div></div>`;
-  $('#print').innerHTML=html+`<style>${r80?'@page{margin:2mm 1mm}':'@page{size:A4;margin:12mm}'}</style>`;
+  $('#print').innerHTML=html+`<style>${r80?'@page{margin:0}':'@page{size:A4;margin:0}'}</style>`;
   setTimeout(()=>window.print(),50);
 }
 function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f"><span>اسم المحل (بيظهر في الفواتير)</span><input id="s_name" value="${esc(S.shop?.name||'')}"></label>
@@ -1027,7 +1027,7 @@ document.addEventListener('focusout',e=>{const t=e.target;if(t.classList?.contai
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
-const APPV='8';let updWait=false;
+const APPV='9';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
   if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
