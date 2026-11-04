@@ -190,6 +190,24 @@ pre.share{white-space:pre-wrap;background:var(--sf);border:1px solid var(--ln);b
  .ov{align-items:center}.sheet{border-radius:18px;max-height:86vh}
 }
 @media (min-width:560px){.acts{grid-template-columns:repeat(6,1fr)}.stats{grid-template-columns:repeat(4,1fr)}}
+/* printed invoice */
+#print{display:none}
+@media print{body>*:not(#print){display:none!important}#print{display:block!important}body{background:#fff!important}}
+.pv{color:#000;font-family:var(--fb);direction:rtl;font-size:13px;line-height:1.45}
+.pv h1{font-family:var(--fd);font-size:22px;margin:0;text-align:center}
+.pv .sub{text-align:center;font-size:12px;margin:2px 0}
+.pv .ttl{text-align:center;font-weight:700;font-size:15px;margin:10px 0 6px;border-block:1.5px solid #000;padding:4px 0}
+.pv .meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-bottom:8px}
+.pv table{width:100%;border-collapse:collapse;margin:6px 0}
+.pv th,.pv td{border:1px solid #000;padding:4px 5px;text-align:center;font-variant-numeric:tabular-nums}
+.pv th{background:#eee}
+.pv td.n{text-align:right}
+.pv .tot{width:60%;margin-inline-start:auto}
+.pv .tot div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dotted #999}
+.pv .tot .big{font-weight:700;font-size:15px;border-bottom:1.5px solid #000}
+.pv .foot{text-align:center;margin-top:12px;font-size:12px}
+.pv.r80{width:72mm;font-size:11.5px}.pv.r80 h1{font-size:17px}.pv.r80 .meta{grid-template-columns:1fr}.pv.r80 .tot{width:100%}
+.pv.r80 th,.pv.r80 td{border:0;border-bottom:1px dashed #000;padding:3px 2px}.pv.r80 th{background:none}
 </style>
 </head>
 <body>
@@ -203,6 +221,7 @@ pre.share{white-space:pre-wrap;background:var(--sf);border:1px solid var(--ln);b
   <button data-a="go" data-v="reports"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>التقارير</button>
 </div></nav>
 <div id="ov" class="ov" hidden><div class="sheet" id="sheet"></div></div>
+<div id="print"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -532,7 +551,7 @@ ${d.ref?'':`<div class="qe"><div class="qe-s"><input id="d_q" placeholder="اس�
 <div class="sec card" id="d_tot">${totHtml()}</div>
 <label class="f" style="margin-top:12px"><span>ملاحظة (اختياري)</span><input id="d_note" value="${esc(d.note)}"></label>
 <div id="d_err"></div>
-${rt?`<button class="primary" data-a="saveinv" data-save>حفظ</button>`:`<div class="grid2"><button class="primary" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button><button class="ghost" data-a="saveinv" data-save>حفظ وخروج</button></div>`}
+${rt?`<button class="primary" data-a="saveinv" data-save>حفظ</button>`:`<button class="primary" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button><div class="grid2" style="margin-top:8px"><button class="ghost" data-a="saveinv" data-k="print" data-save>🖨 حفظ وطباعة</button><button class="ghost" data-a="saveinv" data-save>حفظ وخروج</button></div>`}
 <div style="height:24px"></div>`;
 }
 function resHtml(){
@@ -602,7 +621,9 @@ async function saveInvoice(next){
     lines:lines.map(l=>{const o={pid:l.pid,name:l.name,qty:num(l.qty),price:num(l.price),cost:lineCost(l)};if(l.ri!=null)o.ri=l.ri;return o}),
     sub:c.sub,disc:c.disc,total:c.total,cash:c.cash,cashW:d.cashW||'cash',insta:c.insta,rest:r2(c.rest),profit:c.profit,note:d.note};
   if(d.ref){inv.ref=d.ref;inv.refNo=d.refNo}
+  if(pt){inv.balBefore=r2(pt.bal);inv.balAfter=r2(pt.bal+K.b*inv.rest)}
   await guard(async()=>{await applyInvoice(inv,1);await put('invoices',inv);await markReturned(inv,1);
+    if(next==='print')printInvoice(inv);
     if(next){S.draft=null;newDraft(d.kind);if(d.pt)S.draft.pt=d.pt;S.draft.cashW=d.cashW;render();toast(`اتحفظت فاتورة ${KN[d.kind]} رقم ${inv.no} ✓`);setTimeout(()=>$('#d_q')?.focus(),50);return}
     S.draft=null;S.view=d.kind==='sale'?'home':'invoices';S.itab=rt?'ret':d.kind;render();toast(`اتحفظ ${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} رقم ${inv.no}`);showInvoice(inv.id)});
 }
@@ -628,6 +649,7 @@ ${i.disc?`<div class="kv"><span>خصم</span><b>${fmt(i.disc)}</b></div>`:''}
 <div class="kv"><span>${rt?'اترجع كاش':'كاش'}${i.cash?` <span class="mut">(${W[i.cashW||'cash']})</span>`:''}</span><b>${fmt(i.cash)}</b></div><div class="kv"><span>${rt?'اترجع إنستاباي':'إنستاباي'}</span><b>${fmt(i.insta)}</b></div><div class="kv"><span>${rt?'اتخصم من الحساب':'الباقي آجل'}</span><b>${fmt(i.rest)}</b></div>
 ${i.kind==='sale'||i.kind==='rsale'?`<div class="kv"><span>${rt?'الربح اللي اتخصم':'ربح الفاتورة'}</span><b class="${i.profit<0?'neg':'pos'}">${fmt(i.profit)}</b></div>`:''}${i.note?`<div class="kv"><span>ملاحظة</span><span>${esc(i.note)}</span></div>`:''}</div>
 ${canRet?`<button class="ghost" style="width:100%;margin-bottom:12px;color:var(--bad)" data-a="retfrom" data-id="${i.id}">↩ عمل مرتجع من الفاتورة دي</button>`:''}
+<button class="primary" style="margin-bottom:12px" data-a="printinv" data-id="${i.id}">🖨 طباعة الفاتورة</button>
 ${copyBox(invText(i),PT(i.partyId)?.phone)}
 ${hasRet?'<div class="note">الفاتورة دي عليها مرتجع. عشان تمسحها، امسح المرتجع الأول من صفحة المرتجعات.</div>':`<button class="danger" data-a="delinv" data-id="${i.id}">امسح ${rt?'المرتجع':'الفاتورة'} (الكميات والفلوس هترجع زي ما كانت)</button>`}`)}
 function newRetSheet(){openSheet(`<h3>مرتجع جديد</h3><p class="mut" style="margin:0 0 14px">الأفضل تفتح الفاتورة الأصلية وتضغط «عمل مرتجع منها» عشان الربح يتحسب بتكلفة يوم البيع. لو مش فاكر الفاتورة، اعمله من هنا.</p>
@@ -755,7 +777,31 @@ async function saveDrawer(){const b=r2(S.shop.drawer||0),a=num($('#cd_act').valu
     if(amt>0){const m={id:uid(),type:'close',amount:amt,method:'drawer',to:'cash',ts:ts+1,day:today(),note:k?`فضل في الدرج فكة ${fmt(k)}`:''};await applyMove(m,1);await put('moves',m)}
     closeSheet();toast(`اتقفل الدرج واتحوّل ${fmt(Math.max(0,amt))} للكاش`)});
 }
+function printInvoice(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),r80=sh.printSize==='80';
+  const title=rt?KN[i.kind]:'فاتورة '+KN[i.kind],d=new Date(i.ts),dt=`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`,ht=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`,paid=r2(i.cash+i.insta);
+  const rows=i.lines.map((l,k)=>{const p=P(l.pid);return r80?`<tr><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`
+    :`<tr><td>${k+1}</td><td>${esc(p?.code||'')}</td><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`}).join('');
+  const qty=sum(i.lines,'qty');
+  const html=`<div class="pv ${r80?'r80':''}"><h1>${esc(sh.name||'Aboud Store')}</h1>${sh.addr?`<div class="sub">${esc(sh.addr)}</div>`:''}${sh.phone?`<div class="sub">ت: ${esc(sh.phone)}</div>`:''}
+<div class="ttl">${title}${rt&&i.refNo?` (من فاتورة ${i.refNo})`:''}</div>
+<div class="meta"><div>رقم الفاتورة: <b>${i.no}</b></div><div>التاريخ: ${dt} · ${ht}</div><div>${cust?'العميل':'المورد'}: <b>${esc(i.partyName)}</b></div>${pt?.phone?`<div>موبايل: ${esc(pt.phone)}</div>`:''}</div>
+<table><thead><tr>${r80?'<th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th>':'<th>م</th><th>الكود</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th>'}</tr></thead><tbody>${rows}</tbody></table>
+<div class="mini" style="margin-bottom:6px">عدد الأصناف: ${i.lines.length} · إجمالي القطع: ${fmt(qty)}</div>
+<div class="tot"><div><span>الإجمالي</span><b>${fmt(i.sub)}</b></div>${i.disc?`<div><span>خصم</span><b>${fmt(i.disc)}</b></div>`:''}
+<div class="big"><span>${rt?'قيمة المرتجع':'الصافي'}</span><b>${fmt(i.total)}</b></div>
+${rt?`${paid?`<div><span>اترجع فلوس</span><b>${fmt(paid)}</b></div>`:''}${i.rest?`<div><span>اتخصم من الحساب</span><b>${fmt(i.rest)}</b></div>`:''}`
+ :`<div><span>المدفوع</span><b>${fmt(paid)}</b></div>${i.rest?`<div><span>الباقي آجل</span><b>${fmt(i.rest)}</b></div>`:''}`}
+${pt&&i.balBefore!=null?`<div><span>الرصيد السابق</span><b>${fmt(i.balBefore)}</b></div><div class="big"><span>${cust?'إجمالي المطلوب على الحساب':'الرصيد بعد الفاتورة'}</span><b>${fmt(i.balAfter)}</b></div>`:''}</div>
+${i.note?`<div style="margin-top:8px">ملاحظة: ${esc(i.note)}</div>`:''}
+<div class="foot">${esc(sh.foot||'شكراً لتعاملكم معنا')}</div></div>`;
+  $('#print').innerHTML=html+`<style>@page{size:${r80?'80mm auto':'A4'};margin:${r80?'3mm':'12mm'}}</style>`;
+  setTimeout(()=>window.print(),50);
+}
 function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f"><span>اسم المحل (بيظهر في الفواتير)</span><input id="s_name" value="${esc(S.shop?.name||'')}"></label>
+<div class="sec-h" style="margin-top:6px"><h2>الفاتورة المطبوعة</h2></div>
+<div class="grid2"><label class="f"><span>تليفون المحل</span><input id="s_phone" class="money" value="${esc(S.shop?.phone||'')}"></label><label class="f"><span>العنوان</span><input id="s_addr" value="${esc(S.shop?.addr||'')}"></label></div>
+<label class="f"><span>جملة آخر الفاتورة</span><input id="s_foot" value="${esc(S.shop?.foot||'')}" placeholder="شكراً لتعاملكم معنا"></label>
+<label class="f"><span>مقاس الطباعة</span><div class="seg" id="s_ps"><button class="${S.shop?.printSize!=='80'?'on':''}" data-a="psize" data-k="a4">ورقة A4</button><button class="${S.shop?.printSize==='80'?'on':''}" data-a="psize" data-k="80">إيصال 80مم (طابعة كاشير)</button></div></label>
 <button class="primary" data-a="savesettings" data-save>حفظ</button>
 <div class="note">داخل بـ ${esc(AU?.email||'')}. الحسابات بتتحفظ على السيرفر وتفتحها من أي موبايل أو لاب بنفس الإيميل. لو النت فصل، كمّل شغل عادي وهتترفع أول ما النت يرجع.</div>
 ${isApp()?'':'<button class="ghost" style="width:100%;margin-top:12px" data-a="install">نزّل البرنامج على الجهاز ده</button>'}
@@ -898,7 +944,9 @@ document.addEventListener('click',async e=>{
     case 'qeadd':qeAdd();break;
     case 'rmline':S.draft.lines.splice(+ds.i,1);render();break;
     case 'payall':{const c=calc(S.draft);S.draft.cash=ds.k==='cash'?String(c.total):'';S.draft.insta=ds.k==='insta'?String(c.total):'';$('#d_cash').value=S.draft.cash?fmt(c.total):'';$('#d_insta').value=S.draft.insta?fmt(c.total):'';refreshTotals();break}
-    case 'saveinv':saveInvoice(ds.k==='new');break;
+    case 'saveinv':saveInvoice(ds.k==='new'?true:ds.k==='print'?'print':false);break;
+    case 'printinv':{const i=S.invoices.find(x=>x.id===ds.id);if(i)printInvoice(i);break}
+    case 'psize':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'showinv':showInvoice(ds.id);break;
     case 'showmove':showMove(ds.id);break;
     case 'delinv':{const i=S.invoices.find(x=>x.id===ds.id);const nm=isRet(i.kind)?KN[i.kind]:'فاتورة '+KN[i.kind];confirmSheet(`هيتمسح ${nm} رقم ${i.no}، والكميات والخزنة ورصيد ${esc(i.partyName)} هيرجعوا زي ما كانوا قبله.`,async()=>{await applyInvoice(i,-1);await del('invoices',i.id);await markReturned(i,-1);closeSheet();toast('اتمسح '+nm)});break}
@@ -932,7 +980,7 @@ document.addEventListener('click',async e=>{
     case 'logout':confirmSheet('هتخرج من الحساب على الجهاز ده. البيانات محفوظة على السيرفر.',async()=>{await firebase.auth().signOut()},'خروج');break;
     case 'forgot':{const em=$('#l_em')?.value.trim();if(!em){$('#l_err').innerHTML='<div class="err">اكتب الإيميل الأول وبعدين اضغط «نسيت الباسورد».</div>';break}
       firebase.auth().sendPasswordResetEmail(em).then(()=>toast('اتبعت لينك تغيير الباسورد على '+em)).catch(x=>$('#l_err').innerHTML=`<div class="err">${loginErr(x.code)}</div>`);break}
-    case 'savesettings':{const n=$('#s_name').value.trim();if(n)await guard(()=>put('shop',{...S.shop,name:n}));closeSheet();break}
+    case 'savesettings':{const n=$('#s_name').value.trim();await guard(()=>put('shop',{...S.shop,name:n||S.shop.name,phone:$('#s_phone').value.trim(),addr:$('#s_addr').value.trim(),foot:$('#s_foot').value.trim(),printSize:$('#s_ps .on')?.dataset.k==='80'?'80':'a4'}));closeSheet();toast('اتحفظت الإعدادات');break}
     case 'itab':S.itab=ds.k;render();break;
     case 'ptab':S.ptab=ds.k;render();break;
     case 'scat':S.scat=ds.k;render();break;
@@ -979,7 +1027,7 @@ document.addEventListener('focusout',e=>{const t=e.target;if(t.classList?.contai
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
-const APPV='6';let updWait=false;
+const APPV='7';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
   if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
