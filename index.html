@@ -13,7 +13,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@400;600;700&family=Aref+Ruqaa:wght@700&family=Reem+Kufi:wght@500;700&display=swap">
 <style>
 /* Layout: one-column phone app, steel-ink cash card cut like a key blade, brass accent, bottom tab bar */
 :root{
@@ -239,6 +239,16 @@ body.desk .top{top:50px}
 .dk-prof{font-size:12.5px;color:var(--mut);text-align:center}
 .dk-st{position:fixed;bottom:0;inset-inline:0;height:32px;background:var(--sf);border-top:1px solid var(--ln);display:flex;align-items:center;gap:26px;padding:0 18px;font-size:12.5px;color:var(--mut);z-index:4}.dk-st b{color:var(--fg)}
 /* printed invoice */
+.lgo{text-align:center;color:#000;margin-bottom:6px}
+.lgo .lgr{display:flex;align-items:center;justify-content:center;gap:6px}
+.lgo .nm{font-family:"Aref Ruqaa",serif;font-weight:700;font-size:54px;line-height:1;margin-top:-6px}
+.lgo svg{width:60px;height:auto;flex:none}
+.lgo .tg{display:inline-block;background:#000;color:#fff;font-family:"Reem Kufi",sans-serif;font-weight:700;font-size:15px;padding:2px 16px 4px;border-radius:20px;margin-top:2px}
+.lgo .ln{display:flex;align-items:center;gap:6px;font-family:"Reem Kufi",sans-serif;font-size:15px;font-weight:700}
+.lgo .ln:before,.lgo .ln:after{content:"";flex:1;height:2px;background:#000}
+.lgo .bx{border:2.5px solid #000;border-radius:12px;padding:4px 8px 6px}
+.lgo .t3{font-family:"Reem Kufi",sans-serif;font-size:16px;font-weight:700;border-top:1.5px dashed #000;padding-top:3px;margin-top:2px}
+.lgo .en{font-family:"Readex Pro",sans-serif;font-size:9px;letter-spacing:4px;margin-top:4px;text-transform:uppercase}
 #print{display:none}
 @media print{body>*:not(#print){display:none!important}#print{display:block!important}body{background:#fff!important}}
 .pv{padding:12mm;color:#000;font-family:var(--fb);direction:rtl;font-size:13px;line-height:1.45}
@@ -255,7 +265,8 @@ body.desk .top{top:50px}
 .pv .tot .big{font-weight:700;font-size:15px;border-bottom:1.5px solid #000}
 .pv .foot{text-align:center;margin-top:12px;font-size:12px}
 .pv.r80{padding:2mm 1mm;width:70mm;font-size:12px;font-weight:600}.pv.r80 b,.pv.r80 .big{font-weight:800}.pv.r80 h1{font-size:17px}.pv.r80 .meta{grid-template-columns:1fr}.pv.r80 .tot{width:100%}
-.pv.r80 th,.pv.r80 td{border:0;border-bottom:1px dashed #000;padding:3px 2px}.pv.r80 th{background:none}
+.pv.r80 th,.pv.r80 td{border:0;border-bottom:1px dashed #000;padding:3px 2px}.pv.r80 th{background:none;border-bottom:1.5px solid #000}
+.pv.r80 .ttl{background:#000;color:#fff;border:0;border-radius:6px;padding:3px 0;font-size:14px}.pv.r80 .big{border:2px solid #000!important;border-radius:6px;padding:4px 6px!important;font-size:16px}.pv.r80 .foot{border-top:1.5px dashed #000;padding-top:6px;font-size:12.5px}
 </style>
 </head>
 <body>
@@ -922,12 +933,18 @@ async function saveDrawer(){const b=r2(S.shop.drawer||0),a=num($('#cd_act').valu
     if(amt>0){const m={id:uid(),type:'close',amount:amt,method:'drawer',to:'cash',ts:ts+1,day:today(),note:k?`فضل في الدرج فكة ${fmt(k)}`:''};await applyMove(m,1);await put('moves',m)}
     closeSheet();toast(`اتقفل الدرج واتحوّل ${fmt(Math.max(0,amt))} للخزنة`)});
 }
+const KEYSVG=`<svg viewBox="0 0 120 50" aria-hidden="true"><circle cx="22" cy="25" r="17" fill="none" stroke="#000" stroke-width="8"/><circle cx="22" cy="25" r="5" fill="#000"/><path d="M39 21h75v8H39z" fill="#000"/><path d="M91 29h8v12h-8zM104 29h8v8h-8z" fill="#000"/></svg>`;
+function logoHtml(sh){const n=esc(sh.logo||'عبود'),t=esc(sh.tag||'للمفاتيح الخام'),en=sh.name&&/[a-z]/i.test(sh.name)?`<div class="en">${esc(sh.name)}</div>`:'',st=sh.logoStyle||'1';
+  if(st==='2')return `<div class="lgo"><div class="lgr"><span style="transform:scaleX(-1);display:flex">${KEYSVG}</span><span class="nm">${n}</span></div><div class="ln">${t}</div>${en}</div>`;
+  if(st==='3')return `<div class="lgo"><div class="bx"><div class="lgr"><span class="nm" style="font-size:50px">${n}</span>${KEYSVG}</div><div class="t3">${t}</div></div>${en}</div>`;
+  return `<div class="lgo"><div class="lgr"><span class="nm">${n}</span>${KEYSVG}</div><div class="tg">${t}</div>${en}</div>`}
+async function fontsReady(){try{await Promise.race([Promise.all(['700 54px "Aref Ruqaa"','700 15px "Reem Kufi"','600 12px "IBM Plex Sans Arabic"'].map(f=>document.fonts.load(f))),new Promise(r=>setTimeout(r,2500))])}catch(e){}}
 function printInvoice(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),r80=sh.printSize==='80';
   const title=rt?KN[i.kind]:'فاتورة '+KN[i.kind],d=new Date(i.ts),dt=`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`,ht=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`,paid=r2(i.cash+i.insta);
   const rows=i.lines.map((l,k)=>{const p=P(l.pid);return r80?`<tr><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`
     :`<tr><td>${k+1}</td><td>${esc(p?.code||'')}</td><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`}).join('');
   const qty=sum(i.lines,'qty');
-  const html=`<div class="pv ${r80?'r80':''}"><h1>${esc(sh.name||'Aboud Store')}</h1>${sh.addr?`<div class="sub">${esc(sh.addr)}</div>`:''}${sh.phone?`<div class="sub">ت: ${esc(sh.phone)}</div>`:''}
+  const html=`<div class="pv ${r80?'r80':''}">${logoHtml(sh)}${sh.addr?`<div class="sub">${esc(sh.addr)}</div>`:''}${sh.phone?`<div class="sub">ت: ${esc(sh.phone)}</div>`:''}
 <div class="ttl">${title}${rt&&i.refNo?` (من فاتورة ${i.refNo})`:''}</div>
 <div class="meta"><div>رقم الفاتورة: <b>${i.no}</b></div><div>التاريخ: ${dt} · ${ht}</div><div>${cust?'العميل':'المورد'}: <b>${esc(i.partyName)}</b></div>${pt?.phone?`<div>موبايل: ${esc(pt.phone)}</div>`:''}</div>
 <table><thead><tr>${r80?'<th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th>':'<th>م</th><th>الكود</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th>'}</tr></thead><tbody>${rows}</tbody></table>
@@ -940,11 +957,15 @@ ${pt&&i.balBefore!=null?`<div><span>الرصيد السابق</span><b>${fmt(i.b
 ${i.note?`<div style="margin-top:8px">ملاحظة: ${esc(i.note)}</div>`:''}
 <div class="foot">${esc(sh.foot||'شكراً لتعاملكم معنا')}</div></div>`;
   $('#print').innerHTML=html+`<style>${r80?'@page{margin:0}':'@page{size:A4;margin:0}'}</style>`;
-  setTimeout(()=>window.print(),50);
+  fontsReady().then(()=>setTimeout(()=>window.print(),50));
 }
+function lPrev(){const e=$('#s_prev');if(e)e.innerHTML=logoHtml({...S.shop,logo:$('#s_logo').value.trim(),tag:$('#s_tag').value.trim(),logoStyle:$('#s_ls .on')?.dataset.k})}
 function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f"><span>اسم المحل (بيظهر في الفواتير)</span><input id="s_name" value="${esc(S.shop?.name||'')}"></label>
 <div class="sec-h" style="margin-top:6px"><h2>الفاتورة المطبوعة</h2></div>
 <div class="grid2"><label class="f"><span>تليفون المحل</span><input id="s_phone" class="money" value="${esc(S.shop?.phone||'')}"></label><label class="f"><span>العنوان</span><input id="s_addr" value="${esc(S.shop?.addr||'')}"></label></div>
+<div class="grid2"><label class="f"><span>اسم اللوجو</span><input id="s_logo" value="${esc(S.shop?.logo||'عبود')}"></label><label class="f"><span>تحت اللوجو</span><input id="s_tag" value="${esc(S.shop?.tag||'للمفاتيح الخام')}"></label></div>
+<label class="f"><span>شكل اللوجو</span><div class="seg" id="s_ls">${['1','2','3'].map(k=>`<button class="${(S.shop?.logoStyle||'1')===k?'on':''}" data-a="lstyle" data-k="${k}">شكل ${k}</button>`).join('')}</div></label>
+<div id="s_prev" style="background:#fff;border:1px solid var(--ln);border-radius:12px;padding:12px 8px;margin-bottom:12px;max-width:320px;margin-inline:auto">${logoHtml(S.shop||{})}</div>
 <label class="f"><span>جملة آخر الفاتورة</span><input id="s_foot" value="${esc(S.shop?.foot||'')}" placeholder="شكراً لتعاملكم معنا"></label>
 <label class="f"><span>مقاس الطباعة</span><div class="seg" id="s_ps"><button class="${S.shop?.printSize!=='80'?'on':''}" data-a="psize" data-k="a4">ورقة A4</button><button class="${S.shop?.printSize==='80'?'on':''}" data-a="psize" data-k="80">إيصال 80مم (طابعة كاشير)</button></div></label>
 <button class="primary" data-a="savesettings" data-save>حفظ</button>
@@ -1094,6 +1115,7 @@ document.addEventListener('click',async e=>{
     case 'dcat':S.dcat=ds.k;$('#d_tiles').innerHTML=tilesHtml();break;
     case 'pm':S.draft.pm=ds.k;S.draft.paid='';render();break;
     case 'printinv':{const i=S.invoices.find(x=>x.id===ds.id);if(i)printInvoice(i);break}
+    case 'lstyle':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));lPrev();break;
     case 'psize':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'showinv':showInvoice(ds.id);break;
     case 'showmove':showMove(ds.id);break;
@@ -1132,7 +1154,7 @@ document.addEventListener('click',async e=>{
     case 'logout':confirmSheet('هتخرج من الحساب على الجهاز ده. البيانات محفوظة على السيرفر.',async()=>{await firebase.auth().signOut()},'خروج');break;
     case 'forgot':{const em=$('#l_em')?.value.trim();if(!em){$('#l_err').innerHTML='<div class="err">اكتب الإيميل الأول وبعدين اضغط «نسيت الباسورد».</div>';break}
       firebase.auth().sendPasswordResetEmail(em).then(()=>toast('اتبعت لينك تغيير الباسورد على '+em)).catch(x=>$('#l_err').innerHTML=`<div class="err">${loginErr(x.code)}</div>`);break}
-    case 'savesettings':{const n=$('#s_name').value.trim();await guard(()=>put('shop',{...S.shop,name:n||S.shop.name,phone:$('#s_phone').value.trim(),addr:$('#s_addr').value.trim(),foot:$('#s_foot').value.trim(),printSize:$('#s_ps .on')?.dataset.k==='80'?'80':'a4'}));closeSheet();toast('اتحفظت الإعدادات');break}
+    case 'savesettings':{const n=$('#s_name').value.trim();await guard(()=>put('shop',{...S.shop,name:n||S.shop.name,phone:$('#s_phone').value.trim(),addr:$('#s_addr').value.trim(),foot:$('#s_foot').value.trim(),logo:$('#s_logo').value.trim()||'عبود',tag:$('#s_tag').value.trim(),logoStyle:$('#s_ls .on')?.dataset.k||'1',printSize:$('#s_ps .on')?.dataset.k==='80'?'80':'a4'}));closeSheet();toast('اتحفظت الإعدادات');break}
     case 'itab':S.itab=ds.k;render();break;
     case 'ptab':S.ptab=ds.k;render();break;
     case 'scat':S.scat=ds.k;render();break;
@@ -1152,6 +1174,7 @@ document.addEventListener('input',e=>{
   else if(t.dataset.li!=null){const i=+t.dataset.li,l=S.draft.lines[i];l[t.dataset.f]=t.value;$('#lt'+i).textContent=fmt(lineTot(l));$('#lm'+i).innerHTML=lineMeta(l);refreshTotals()}
   else if(['d_disc','d_cash','d_insta','d_paid','d_tend'].includes(id)){S.draft[id.slice(2)]=t.value;refreshTotals()}
   else if(id==='cd_act'||id==='cd_keep')cdSum();
+  else if(id==='s_logo'||id==='s_tag')lPrev();
 });
 document.addEventListener('change',e=>{
   const id=e.target.id;
@@ -1189,7 +1212,7 @@ document.addEventListener('focusout',e=>{if(e.target.id==='d_pq')setTimeout(()=>
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
-const APPV='13';let updWait=false;
+const APPV='14';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
   if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
