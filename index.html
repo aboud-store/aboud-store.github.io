@@ -438,6 +438,7 @@ function vParties(){
   return header('حسابات العملاء والموردين')+`<div class="seg"><button class="${t==='c'?'on':''}" data-a="ptab" data-k="c">العملاء</button><button class="${t==='s'?'on':''}" data-a="ptab" data-k="s">الموردين</button></div>
 <div class="stat" style="margin-top:12px"><span class="lbl">${t==='c'?'إجمالي الفلوس اللي عند العملاء':'إجمالي اللي علينا للموردين'}</span><b>${fmt(tot)}</b></div>
 <div class="search"><input id="pq" placeholder="ابحث بالاسم أو الموبايل" value="${esc(S.pq)}"><button class="addbtn" data-a="party">+ ${t==='c'?'عميل':'مورد'}</button></div>
+<button class="ghost" style="width:100%;margin:-4px 0 12px" data-a="pimport">⇪ استيراد ${t==='c'?'العملاء':'الموردين'} بأرصدتهم من Excel</button>
 <div class="list" id="plist">${a.length?a.map(partyRow).join(''):`<div class="empty"><b>مفيش ${t==='c'?'عملاء':'موردين'}</b>ضيفهم بأرصدتهم القديمة عشان الحسابات تبدأ مظبوطة.</div>`}</div>`;
 }
 function balTxt(p){if(!p.bal)return '<span class="mut">خالص</span>';const c=p.type==='c';return p.bal>0?`<span class="${c?'neg':'warn'}">${c?'عليه':'ليه'} ${fmt(p.bal)}</span>`:`<span class="pos">${c?'ليه':'علينا ليه'} ${fmt(-p.bal)}</span>`.replace('علينا ليه','ليك عنده')}
@@ -780,6 +781,55 @@ async function runImport(){
   });
 }
 
+/* ---------- import customers / suppliers with balances ---------- */
+const PIMPF={name:['الاسم',['اسم العميل','اسم المورد','العميل','المورد','الاسم','اسم','name']],phone:['الموبايل',['موبايل','تليفون','هاتف','جوال','phone','mobile']],
+  bal:['الرصيد',['الرصيد','رصيد','balance']],deb:['مدين',['مدين','debit']],cred:['دائن',['دائن','credit']]};
+const PIMP_ORDER=['phone','deb','cred','bal','name'];
+let PIMP=null;
+function pImportSheet(){PIMP=null;const c=S.ptab==='c';openSheet(`<h3>استيراد ${c?'العملاء':'الموردين'} بأرصدتهم</h3><p class="mut" style="margin:0 0 12px">من «سهل» صدّر تقرير أرصدة ${c?'العملاء':'الموردين'} لملف Excel وارفعه هنا. لازم يكون فيه عمود الاسم، والرصيد يا إما عمود واحد يا إما عمودين مدين ودائن.</p>
+<input type="file" id="pimp_file" accept=".xlsx,.xls,.csv"><div id="pimp_body"></div>`);loadXLSX().catch(()=>{})}
+async function readPImportFile(f){
+  const body=$('#pimp_body');body.innerHTML='<div class="empty">بيقرا الملف…</div>';
+  try{await loadXLSX()}catch(e){body.innerHTML='<div class="err">مش قادر أحمّل قارئ ملفات Excel دلوقتي. اتأكد من النت وجرّب تاني.</div>';return}
+  let rows;
+  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});rows=wb.SheetNames.map(n=>XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:'',raw:true})).sort((a,b)=>b.length-a.length)[0]||[]}
+  catch(e){body.innerHTML='<div class="err">الملف ده مش مقروء. احفظه من Excel بصيغة .xlsx أو .csv وارفعه تاني.</div>';return}
+  const allKw=Object.values(PIMPF).flatMap(x=>x[1]);
+  let hi=0,best=-1;rows.slice(0,15).forEach((r,i)=>{const sc=r.filter(c=>{const t=String(c).trim().toLowerCase();return t&&allKw.some(k=>t.includes(k))}).length;if(sc>best){best=sc;hi=i}});
+  const head=(rows[hi]||[]).map((c,i)=>String(c).trim()||`عمود ${i+1}`),map={},used=new Set();
+  PIMP_ORDER.forEach(k=>{for(const kw of PIMPF[k][1]){const i=head.findIndex((h,j)=>!used.has(j)&&h.toLowerCase().includes(kw));if(i>=0){map[k]=i;used.add(i);return}}});
+  if(map.bal!=null&&(map.deb!=null||map.cred!=null))delete map.bal; /* debit/credit columns win over a single balance column */
+  PIMP={head,data:rows.slice(hi+1).filter(r=>r.some(c=>String(c).trim()!=='')),map,file:f.name,type:S.ptab};
+  renderPImport();
+}
+function pImpItems(){const {data,map,type}=PIMP;if(map.name==null)return[];
+  const g=(r,k)=>map[k]!=null?r[map[k]]:'';
+  return data.map(r=>{let bal;if(map.deb!=null||map.cred!=null){const d=num(g(r,'deb')),c=num(g(r,'cred'));bal=type==='c'?d-c:c-d}else bal=num(g(r,'bal'));
+    return{name:String(g(r,'name')).trim(),phone:String(g(r,'phone')).trim(),bal:r2(bal)}}).filter(x=>x.name&&!/^(ال)?إجمالي|^الاجمالي|^total/i.test(x.name));}
+function renderPImport(){
+  const it=pImpItems(),body=$('#pimp_body');if(!body)return;const c=PIMP.type==='c';
+  const exist=it.filter(x=>S.parties.some(p=>p.type===PIMP.type&&p.name===x.name)).length;
+  body.innerHTML=`<div class="note" style="margin:12px 0">${esc(PIMP.file)} · ${PIMP.data.length} صف</div>
+<div class="sec-h"><h2>كل عمود يروح فين؟</h2></div><div class="card">${Object.entries(PIMPF).map(([k,[lbl]])=>`<label class="f" style="display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:8px"><span style="margin:0">${lbl}${k==='name'?' *':''}</span><select data-pimp="${k}"><option value="">— مش موجود —</option>${PIMP.head.map((h,i)=>`<option value="${i}" ${PIMP.map[k]===i?'selected':''}>${esc(h)}</option>`).join('')}</select></label>`).join('')}
+<p class="mini" style="margin:4px 0 0">${c?'لو فيه مدين ودائن: الرصيد = مدين − دائن (موجب يعني الفلوس عنده).':'لو فيه مدين ودائن: الرصيد = دائن − مدين (موجب يعني علينا له).'}</p></div>
+${it.length?`<div class="sec-h" style="margin-top:14px"><h2>معاينة</h2><span class="mut">${it.length} ${c?'عميل':'مورد'}${exist?` · ${exist} موجودين قبل كده`:''}</span></div>
+<div class="list">${it.slice(0,6).map(x=>`<div class="row"><div class="main"><div class="t">${esc(x.name)}</div><div class="s">${esc(x.phone||'بدون موبايل')}</div></div><div class="amt">${balTxt({type:PIMP.type,bal:x.bal})}</div></div>`).join('')}</div>
+<div class="kv" style="margin-top:8px"><span>${c?'إجمالي اللي عند العملاء':'إجمالي اللي علينا للموردين'}</span><b>${fmt(sum(it.filter(x=>x.bal>0),'bal'))}</b></div>
+${exist?'<div class="note">اللي موجودين قبل كده (نفس الاسم) هيتسابوا زي ما هم ومش هيتكرروا.</div>':''}
+<div id="pimp_prog"></div><button class="primary" style="margin-top:12px" data-a="pimprun" data-save>استورد ${it.length-exist} ${c?'عميل':'مورد'}</button>`:`<div class="err" style="margin-top:12px">${PIMP.map.name==null?'اختار العمود اللي فيه الاسم.':'مفيش أسماء في العمود ده.'}</div>`}`;
+}
+async function runPImport(){
+  const it=pImpItems();if(!it.length)return;const prog=$('#pimp_prog');let added=0,skipped=0,done=0;
+  await guard(async()=>{
+    for(const x of it){
+      if(S.parties.some(p=>p.type===PIMP.type&&p.name===x.name)){skipped++;continue}
+      await put('parties',{id:uid(),type:PIMP.type,name:x.name,phone:x.phone,open:x.bal,bal:x.bal,created:Date.now()});added++;
+      done++;if(prog&&done%5===0)prog.innerHTML=`<div class="note">اتسجل ${done}…</div>`;
+    }
+    sortAll();closeSheet();toast(`اتضاف ${added}${skipped?` · اتساب ${skipped} موجودين`:''}`);
+  });
+}
+
 /* ---------- events ---------- */
 document.addEventListener('click',async e=>{
   if(e.target.id==='ov'){closeSheet();return}
@@ -801,6 +851,8 @@ document.addEventListener('click',async e=>{
     case 'retfrom':returnFrom(ds.id);break;
     case 'newret':newRetSheet();break;
     case 'import':importSheet();break;
+    case 'pimport':pImportSheet();break;
+    case 'pimprun':runPImport();break;
     case 'imprun':runImport();break;
     case 'delmove':{const m=S.moves.find(x=>x.id===ds.id);confirmSheet(`هتتمسح حركة «${MOVE[m.type]}» بمبلغ ${fmt(Math.abs(m.amount))}.`,async()=>{await applyMove(m,-1);await del('moves',m.id);closeSheet();toast('اتمسحت الحركة')});break}
     case 'move':S.okNeg=false;moveForm(ds.t);if(ds.pid)setTimeout(()=>{const s=$('#m_party');if(s)s.value=ds.pid},0);break;
@@ -844,6 +896,8 @@ document.addEventListener('change',e=>{
   const id=e.target.id;
   if(id==='d_party'){S.draft.partyId=e.target.value;refreshTotals()}
   if(id==='imp_file'&&e.target.files[0])readImportFile(e.target.files[0]);
+  if(id==='pimp_file'&&e.target.files[0])readPImportFile(e.target.files[0]);
+  if(e.target.dataset.pimp&&PIMP){const k=e.target.dataset.pimp,v=e.target.value;if(v==='')delete PIMP.map[k];else{const n=+v;Object.keys(PIMP.map).forEach(o=>{if(PIMP.map[o]===n)delete PIMP.map[o]});PIMP.map[k]=n}renderPImport()}
   if(e.target.dataset.imp&&IMP){const k=e.target.dataset.imp,v=e.target.value;if(v==='')delete IMP.map[k];else{const n=+v;Object.keys(IMP.map).forEach(o=>{if(IMP.map[o]===n)delete IMP.map[o]});IMP.map[k]=n}renderImport()}
   if(id==='r_from'||id==='r_to'){S[id==='r_from'?'from':'to']=e.target.value;loadReport()}
 });
