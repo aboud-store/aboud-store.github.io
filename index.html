@@ -978,6 +978,13 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('focusout',e=>{const t=e.target;if(t.classList?.contains('money')&&t.inputMode==='decimal'&&t.value.trim()!==''){t.value=fmt(num(t.value))}});
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+/* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
+const APPV='6';let updWait=false;
+async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
+  if(m&&m[1]!==APPV){if(S.view==='inv'||S.sheetOpen||S.busy){updWait=true;return}location.reload()}}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkUpdate()});
+setInterval(()=>{if(updWait&&S.view!=='inv'&&!S.sheetOpen&&!S.busy)location.reload()},5000);
+setInterval(checkUpdate,5*60*1000);
 init();
 </script>
 </body>
