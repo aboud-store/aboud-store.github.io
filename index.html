@@ -595,6 +595,21 @@ ${inv.length>=1000||mv.length>=1000?'<div class="note">الفترة دي فيه�
 
 /* ---------- invoice editor ---------- */
 function newDraft(kind){S.draft={kind,partyId:'',pt:'retail',lines:[],disc:'',cash:'',insta:'',voda:'',cashW:defCW(kind),note:'',q:'',eq:'1',ep:''};S.view='inv';render();window.scrollTo(0,0);if(matchMedia('(min-width:560px)').matches)setTimeout(()=>$('#d_q')?.focus(),0)}
+/* edit a saved invoice: load it back into the editor; on save the old one is reversed and the new one applied (same number and date) */
+async function editFrom(id){
+  const o=S.invoices.find(x=>x.id===id);if(!o)return toast('مش لاقي الفاتورة');
+  if(Object.values(o.ret||{}).some(v=>v>0))return toast('الفاتورة دي عليها مرتجع. امسح المرتجع الأول وبعدين عدّلها.');
+  let orig=null;if(o.ref){orig=await getInv(o.ref);if(!orig)return toast('مش لاقي الفاتورة الأصلية للمرتجع ده')}
+  const lines=o.lines.map(l=>{const x={pid:l.pid,name:l.name,qty:String(l.qty),price:String(l.list!=null?l.list:l.price),cost:l.cost};if(l.ld)x.disc=String(l.ld);
+    if(l.ri!=null&&orig){x.ri=l.ri;x.max=r2(remaining(orig,l.ri)+l.qty)}return x});
+  S.draft={kind:o.kind,edit:o.id,editNo:o.no,partyId:o.partyId||'',pt:'retail',lines,disc:o.disc?String(o.disc):'',cash:o.cash?String(o.cash):'',insta:o.insta?String(o.insta):'',voda:o.voda?String(o.voda):'',
+    cashW:o.cashW||defCW(o.kind),instaW:o.instaW||'insta',note:o.note||'',q:'',eq:'1',ep:''};
+  if(o.ref){S.draft.ref=o.ref;S.draft.refNo=o.refNo}
+  $('#ov').hidden=true;S.sheetOpen=false;S.view='inv';render();window.scrollTo(0,0);
+}
+/* party balance as it was before the invoice being edited (so «balance after» in the editor is right) */
+function ptBase(pt){const d=S.draft;if(!pt)return 0;const o=d&&d.edit&&S.invoices.find(x=>x.id===d.edit);
+  return o&&o.partyId===pt.id?r2(pt.bal-KD[o.kind].b*(o.rest||0)):pt.bal}
 async function returnFrom(id){
   const o=await getInv(id);if(!o)return toast('مش لاقي الفاتورة الأصلية');
   const lines=o.lines.map((l,i)=>({pid:l.pid,name:l.name,qty:String(remaining(o,i)),price:String(l.price),cost:l.cost,ri:i,max:remaining(o,i)})).filter(l=>l.max>0);
@@ -608,7 +623,8 @@ async function returnFrom(id){
 }
 function vEditor(){
   const d=S.draft,K=KD[d.kind],cust=K.pt==='c',rt=isRet(d.kind),ps=S.parties.filter(p=>p.type===K.pt);
-  return `<div class="ed-h"><button class="ibtn" data-a="cancelinv" aria-label="رجوع">${ICON.back}</button><h2>${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} جديد${rt?'':'ة'}</h2><span class="mut num">#${(S.shop.seq||0)+1}</span></div>
+  return `<div class="ed-h"><button class="ibtn" data-a="cancelinv" aria-label="رجوع">${ICON.back}</button><h2>${d.edit?`تعديل ${rt?KN[d.kind]:'فاتورة '+KN[d.kind]}`:`${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} جديد${rt?'':'ة'}`}</h2><span class="mut num">#${d.edit?d.editNo:(S.shop.seq||0)+1}</span></div>
+${d.edit?`<div class="note" style="margin:0 0 12px">بتعدّل ${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} رقم ${d.editNo}. لما تحفظ، القديمة هتترجع (المخزن والخزنة والحساب) والجديدة تتسجل مكانها بنفس الرقم والتاريخ.</div>`:''}
 ${d.ref?`<div class="note" style="margin:0 0 12px">مرتجع من فاتورة ${d.kind==='rsale'?'البيع':'الشراء'} رقم ${d.refNo}. قلّل الكمية للي راجع فعلاً، أو شيل الصنف اللي مش راجع.${S.invoices.find(x=>x.id===d.ref)?.disc?' الأسعار محسوب فيها خصم الفاتورة الأصلية.':''}</div>`:''}
 <label class="f"><span>${cust?'العميل':'المورد'}</span><div style="display:flex;gap:8px;align-items:flex-start">${partyBox()}${d.ref?'':'<button class="ghost" data-a="party" data-fromed="1" style="flex:none">+ جديد</button>'}</div></label>
 ${d.kind==='sale'?`<div class="seg" style="margin-bottom:12px"><button class="${d.pt==='retail'?'on':''}" data-a="pt" data-k="retail">سعر القطاعي</button><button class="${d.pt==='whole'?'on':''}" data-a="pt" data-k="whole">سعر الجملة</button></div>`:''}
@@ -621,7 +637,7 @@ ${d.ref?'':`<div class="qe"><div class="qe-s"><input id="d_q" placeholder="اس�
 <div class="sec card" id="d_tot">${totHtml()}</div>
 <label class="f" style="margin-top:12px"><span>ملاحظة (اختياري)</span><input id="d_note" value="${esc(d.note)}"></label>
 <div id="d_err"></div>
-${rt?`<button class="primary" data-a="saveinv" data-save>حفظ</button>`:`<button class="primary" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button><div class="grid2" style="margin-top:8px"><button class="ghost" data-a="saveinv" data-k="print" data-save>🖨 حفظ وطباعة</button><button class="ghost" data-a="saveinv" data-save>حفظ وخروج</button></div>`}
+${d.edit?`<button class="primary" data-a="saveinv" data-save>حفظ التعديل</button>${rt?'':`<button class="ghost" style="width:100%;margin-top:8px" data-a="saveinv" data-k="print" data-save>🖨 حفظ التعديل وطباعة</button>`}<button class="ghost" style="width:100%;margin-top:8px" data-a="cancelinv">إلغاء التعديل</button>`:rt?`<button class="primary" data-a="saveinv" data-save>حفظ</button>`:`<button class="primary" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button><div class="grid2" style="margin-top:8px"><button class="ghost" data-a="saveinv" data-k="print" data-save>🖨 حفظ وطباعة</button><button class="ghost" data-a="saveinv" data-save>حفظ وخروج</button></div>`}
 <div style="height:24px"></div>`;
 }
 const isDesk=()=>matchMedia('(min-width:1100px)').matches;
@@ -641,7 +657,8 @@ function navTo(ds){const d=S.draft;
 /* payment on the laptop screen: one button (drawer / cash / insta / credit) + amount paid; fills cash/insta for calc() */
 function lineTotSum(d){return r2(sum(d.lines,lineTot)-num(d.disc))}
 function initPay(d){if(d.pm)return;const rt=isRet(d.kind),n=[d.cash,d.insta,d.voda].filter(x=>num(x)>0).length;
-  if(n>1){d.pm='split';d.scash=d.cash||''}else d.pm=num(d.insta)>0?'insta':num(d.voda)>0?'voda':num(d.cash)>0?(d.cashW||'cash'):(rt&&d.partyId?'credit':defCW(d.kind));d.paid=''}
+  if(n>1){d.pm='split';d.scash=d.cash||''}else d.pm=num(d.insta)>0?'insta':num(d.voda)>0?'voda':num(d.cash)>0?(d.cashW||'cash'):(rt&&d.partyId?'credit':defCW(d.kind));d.paid='';
+  if(d.edit&&d.pm!=='split'){const v=num(d.insta)||num(d.voda)||num(d.cash);if(!v&&d.partyId)d.pm='credit';else d.paid=String(v)}} /* editing: keep what was actually paid */
 /* split: cash left empty = whatever is left after insta + voda */
 const autoCash=d=>r2(Math.max(0,lineTotSum(d)-num(d.insta)-num(d.voda)));
 function syncPay(d){if(!d.pm)return;d.instaW='insta';
@@ -694,7 +711,7 @@ function vEditorDesk(){
   const td=today(),ts=S.invoices.filter(i=>i.kind==='sale'&&i.day===td),qn=sum(d.lines,l=>num(l.qty)),ld=sum(d.lines,l=>num(l.disc));
   const cashy=d.pm==='drawer'||d.pm==='cash'||(d.pm==='split'&&c.cash>0);
   return `<div class="dk"><div class="dk-main">
-<div class="card"><div class="dk-hd"><h2>${rt?KN[d.kind]:'فاتورة '+KN[d.kind]}</h2><span class="dk-no">#${(S.shop.seq||0)+1}</span>
+<div class="card"><div class="dk-hd"><h2>${d.edit?'تعديل ':''}${rt?KN[d.kind]:'فاتورة '+KN[d.kind]}</h2><span class="dk-no">#${d.edit?d.editNo:(S.shop.seq||0)+1}</span>
 <span class="mut" style="margin-inline-start:12px">${cust?'العميل':'المورد'}</span>${partyBox()}
 ${d.ref?'':`<button class="ghost" data-a="party" data-fromed="1" style="padding:8px 12px">+ ${cust?'عميل':'مورد'} جديد</button>`}
 ${d.kind==='sale'?`<div class="seg"><button class="${d.pt!=='whole'?'on':''}" data-a="pt" data-k="retail">قطاعي</button><button class="${d.pt==='whole'?'on':''}" data-a="pt" data-k="whole">جملة</button></div>`:''}</div>
@@ -717,8 +734,8 @@ ${d.pm==='split'?splitHtml(d):d.pm==='credit'?'':`<div class="kv"><span>${rt?'ا
 <div id="dt_bal">${dBal(c)}</div>
 ${cashy&&d.kind==='sale'?`<div class="kv"><span>العميل دفع (للفكة)</span><input id="d_tend" class="money" inputmode="decimal" value="${esc(d.tend||'')}" placeholder="0"></div><div class="dk-chg"><span>الباقي للعميل (فكة)</span><b id="dt_chg">${fmt(Math.max(0,num(d.tend)-c.cash))}</b></div>`:''}
 <div id="d_err"></div></div>
-<div class="card dk-acts">${rt?`<button class="primary" data-a="saveinv" data-save>حفظ المرتجع</button>`:`<button class="primary" data-a="saveinv" data-k="print" data-save>🖨 حفظ وطباعة</button><button class="ghost" style="border-color:var(--ac);color:var(--ac);font-weight:600" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button>`}
-<div class="row2"><button class="ghost" data-a="saveinv" data-k="${rt?'':'new0'}" data-save>${rt?'حفظ وخروج':'حفظ بس'}</button><button class="ghost" data-a="cancelinv">إلغاء الفاتورة</button></div>
+<div class="card dk-acts">${d.edit?`<div class="note" style="margin:0 0 4px">بتعدّل الفاتورة رقم ${d.editNo}. القديمة هتترجع والجديدة تتسجل مكانها بنفس الرقم والتاريخ.</div>${rt?'':`<button class="primary" data-a="saveinv" data-k="print" data-save>🖨 حفظ التعديل وطباعة</button>`}<div class="row2"><button class="${rt?'primary':'ghost'}" data-a="saveinv" data-save>حفظ التعديل</button><button class="ghost" data-a="cancelinv">إلغاء التعديل</button></div>`:rt?`<button class="primary" data-a="saveinv" data-save>حفظ المرتجع</button>`:`<button class="primary" data-a="saveinv" data-k="print" data-save>🖨 حفظ وطباعة</button><button class="ghost" style="border-color:var(--ac);color:var(--ac);font-weight:600" data-a="saveinv" data-k="new" data-save>حفظ وفاتورة جديدة</button>`}
+${d.edit?'':`<div class="row2"><button class="ghost" data-a="saveinv" data-k="${rt?'':'new0'}" data-save>${rt?'حفظ وخروج':'حفظ بس'}</button><button class="ghost" data-a="cancelinv">إلغاء الفاتورة</button></div>`}
 ${d.kind==='sale'?`<div class="dk-prof">ربح الفاتورة <b id="dt_prof" class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}</div></div></div>
 <div class="dk-st"><span>درج النقدية <b>${fmt(S.shop.drawer)}</b></span><span>إنستاباي <b>${fmt(S.shop.insta)}</b></span><span>فودافون <b>${fmt(S.shop.voda)}</b></span><span>فواتير بيع النهارده <b>${ts.length}</b></span><span>مبيعات النهارده <b>${fmt(sum(ts,'total'))}</b></span>${S.invoices[0]?`<span>آخر فاتورة #${S.invoices[0].no} · ${tm(S.invoices[0].ts)}</span>`:''}</div>`;
 }
@@ -727,7 +744,7 @@ function splitHtml(d){const out=d.kind==='buy'||d.kind==='rsale';
 <div class="kv"><span>إنستاباي</span><input id="d_insta" class="money" inputmode="decimal" value="${esc(d.insta||'')}" placeholder="0"></div>
 <div class="kv"><span>فودافون كاش</span><input id="d_voda" class="money" inputmode="decimal" value="${esc(d.voda||'')}" placeholder="0"></div>
 <div class="mini" style="margin:-2px 0 6px">${out?'':'اكتب التحويل والكاش هيتحسب لوحده. '}الباقي بعد كده ${KD[d.kind].pt==='c'?'على العميل':'للمورد'}.</div>`}
-function dBal(c){const d=S.draft,pt=PT(d.partyId);if(!pt)return '';return `<div class="kv sm"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(pt.bal+KD[d.kind].b*c.rest)}</b></div>`}
+function dBal(c){const d=S.draft,pt=PT(d.partyId);if(!pt)return '';return `<div class="kv sm"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(ptBase(pt)+KD[d.kind].b*c.rest)}</b></div>`}
 function refreshDesk(){const d=S.draft;syncPay(d);const c=calc(d),t=(id,v)=>{const e=$('#'+id);if(e)e.textContent=v};
   t('dt_sub',fmt(c.sub));t('dt_tot',fmt(c.total));t('dt_rest',fmt(c.rest));const w=$('#dt_restw');if(w)w.hidden=!(c.rest>0.001);
   const b=$('#dt_bal');if(b)b.innerHTML=dBal(c);t('dt_chg',fmt(Math.max(0,num(d.tend)-c.cash)));
@@ -784,7 +801,7 @@ ${rt?'':`<label class="f" style="margin:8px 0"><span>خصم</span><input id="d_d
 function sumHtml(){const d=S.draft,c=calc(d),pt=PT(d.partyId),K=KD[d.kind];
   if(!d.partyId&&!isRet(d.kind)&&!num(d.cash)&&c.total>0)return `<div class="kv"><span>${num(d.insta)||num(d.voda)?'الباقي كاش':'لو سبت الدفع فاضي'}</span><b>${fmt(Math.max(0,c.total-num(d.insta)-num(d.voda)))} في ${W[d.cashW||'cash']}</b></div>${d.kind==='sale'?`<div class="kv"><span>ربح الفاتورة</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`;
   return `<div class="kv"><span>${PAYL[d.kind][3]}</span><b class="${c.rest>0?'warn':c.rest<0?'neg':''}">${fmt(c.rest)}</b></div>
-${pt?`<div class="kv"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(pt.bal+K.b*c.rest)}</b></div>`:''}
+${pt?`<div class="kv"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(ptBase(pt)+K.b*c.rest)}</b></div>`:''}
 ${d.kind==='sale'||d.kind==='rsale'?`<div class="kv"><span>${d.kind==='sale'?'ربح الفاتورة':'الربح اللي هيتخصم'}</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`}
 function refreshTotals(){if(S.view==='inv'&&isDesk()&&$('#dt_tot')){refreshDesk();return}const s=$('#d_sum');if(s)s.innerHTML=sumHtml();const t=$('#d_tot .kv b');if(t)t.textContent=fmt(calc(S.draft).sub);const tt=$('#d_tot .kv.tot b');if(tt)tt.textContent=fmt(calc(S.draft).total)}
 function qeInfo(){const d=S.draft,p=d&&d.sel&&P(d.sel);if(!p)return 'اكتب اسم الصنف أو كوده، اختاره بـ Enter، وبعدين الكمية والسعر.';
@@ -819,6 +836,16 @@ async function saveInvoice(next){
     lines:lines.map(l=>{const q=num(l.qty),ld=num(l.disc);const o={pid:l.pid,name:l.name,qty:q,price:ld?Math.round((num(l.price)-ld/q)*10000)/10000:num(l.price),cost:lineCost(l)};if(ld){o.list=num(l.price);o.ld=ld}if(l.ri!=null)o.ri=l.ri;return o}),
     sub:c.sub,disc:c.disc,total:c.total,cash:c.cash,cashW:d.cashW||'cash',insta:c.insta,instaW:'insta',voda:c.voda,rest:r2(c.rest),profit:c.profit,note:d.note};
   if(d.ref){inv.ref=d.ref;inv.refNo=d.refNo}
+  if(d.edit){const old=S.invoices.find(x=>x.id===d.edit);if(!old)return fail('مش لاقي الفاتورة القديمة. اقفل وافتحها تاني.');
+    if(Object.values(old.ret||{}).some(v=>v>0))return fail('الفاتورة دي عليها مرتجع. امسح المرتجع الأول وبعدين عدّلها.');
+    Object.assign(inv,{id:old.id,no:old.no,ts:old.ts,day:old.day,instaW:d.instaW||'insta',edited:Date.now(),edits:(old.edits||0)+1});
+    await guard(async()=>{
+      await applyInvoice(old,-1);await markReturned(old,-1); /* undo the old invoice: stock, money, account */
+      const p2=PT(inv.partyId);if(p2){inv.balBefore=r2(p2.bal);inv.balAfter=r2(p2.bal+K.b*inv.rest)}
+      await applyInvoice(inv,1);await put('invoices',inv);await markReturned(inv,1);
+      if(next==='print')printInvoice(inv);
+      S.draft=null;S.view='invoices';S.itab=rt?'ret':d.kind;render();toast(`اتعدّلت ${rt?KN[d.kind]:'فاتورة '+KN[d.kind]} رقم ${inv.no} ✓`);showInvoice(inv.id)});
+    return}
   if(pt){inv.balBefore=r2(pt.bal);inv.balAfter=r2(pt.bal+K.b*inv.rest)}
   await guard(async()=>{await applyInvoice(inv,1);await put('invoices',inv);await markReturned(inv,1);
     if(next==='print')printInvoice(inv);
@@ -841,7 +868,7 @@ function invText(i){const pt=PT(i.partyId),cust=KD[i.kind].pt==='c',rt=isRet(i.k
 function showInvoice(id){const i=S.invoices.find(x=>x.id===id);if(!i)return;const cust=KD[i.kind].pt==='c',rt=isRet(i.kind);
   const ret=i.ret||{},hasRet=Object.values(ret).some(v=>v>0),canRet=!rt&&i.lines.some((l,k)=>remaining(i,k)>0);
   openSheet(`<h3>${rt?KN[i.kind]:'فاتورة '+KN[i.kind]} #${i.no}</h3>${i.refNo?`<p class="mut" style="margin:-8px 0 10px">من فاتورة ${i.kind==='rsale'?'البيع':'الشراء'} رقم ${i.refNo}</p>`:''}<div class="card" style="margin-bottom:12px">
-<div class="kv"><span>${cust?'العميل':'المورد'}</span><b style="font-family:var(--fb)">${esc(i.partyName)}</b></div><div class="kv"><span>الوقت</span><span>${i.day} · ${tm(i.ts)}</span></div>
+<div class="kv"><span>${cust?'العميل':'المورد'}</span><b style="font-family:var(--fb)">${esc(i.partyName)}</b></div><div class="kv"><span>الوقت</span><span>${i.day} · ${tm(i.ts)}</span></div>${i.edited?`<div class="kv"><span>اتعدّلت</span><span class="mut">${dstr(new Date(i.edited))===i.day?'':new Date(i.edited).toLocaleDateString('ar-EG')+' · '}${tm(i.edited)}${i.edits>1?` (${i.edits} مرات)`:''}</span></div>`:''}
 ${i.lines.map((l,k)=>`<div class="kv"><span>${esc(l.name)} <span class="mut num">${fmt(l.qty)} × ${fmt(l.price)}</span>${ret[k]>0?` <span class="tag ret">رجع ${fmt(ret[k])}</span>`:''}</span><b>${fmt(l.qty*l.price)}</b></div>`).join('')}
 ${i.disc?`<div class="kv"><span>خصم</span><b>${fmt(i.disc)}</b></div>`:''}
 <div class="kv tot"><span>${rt?'المبلغ الراجع':'المطلوب'}</span><b>${fmt(i.total)}</b></div>
@@ -849,8 +876,9 @@ ${(payParts(i).length?payParts(i):[[i.cashW||'cash',0]]).map(([k,v])=>`<div clas
 ${i.kind==='sale'||i.kind==='rsale'?`<div class="kv"><span>${rt?'الربح اللي اتخصم':'ربح الفاتورة'}</span><b class="${i.profit<0?'neg':'pos'}">${fmt(i.profit)}</b></div>`:''}${i.note?`<div class="kv"><span>ملاحظة</span><span>${esc(i.note)}</span></div>`:''}</div>
 ${canRet?`<button class="ghost" style="width:100%;margin-bottom:12px;color:var(--bad)" data-a="retfrom" data-id="${i.id}">↩ عمل مرتجع من الفاتورة دي</button>`:''}
 <button class="primary" style="margin-bottom:12px" data-a="printinv" data-id="${i.id}">🖨 طباعة الفاتورة</button>
+${hasRet?'':`<button class="ghost" style="width:100%;margin-bottom:12px" data-a="editinv" data-id="${i.id}">✏️ تعديل ${rt?'المرتجع':'الفاتورة'}</button>`}
 ${copyBox(invText(i),PT(i.partyId)?.phone)}
-${hasRet?'<div class="note">الفاتورة دي عليها مرتجع. عشان تمسحها، امسح المرتجع الأول من صفحة المرتجعات.</div>':`<button class="danger" data-a="delinv" data-id="${i.id}">امسح ${rt?'المرتجع':'الفاتورة'} (الكميات والفلوس هترجع زي ما كانت)</button>`}`)}
+${hasRet?'<div class="note">الفاتورة دي عليها مرتجع. عشان تعدّلها أو تمسحها، امسح المرتجع الأول من صفحة المرتجعات.</div>':`<button class="danger" data-a="delinv" data-id="${i.id}">امسح ${rt?'المرتجع':'الفاتورة'} (الكميات والفلوس هترجع زي ما كانت)</button>`}`)}
 function newRetSheet(){openSheet(`<h3>مرتجع جديد</h3><p class="mut" style="margin:0 0 14px">الأفضل تفتح الفاتورة الأصلية وتضغط «عمل مرتجع منها» عشان الربح يتحسب بتكلفة يوم البيع. لو مش فاكر الفاتورة، اعمله من هنا.</p>
 <div class="grid2"><button class="primary" style="flex-direction:column;gap:2px" data-a="newinv" data-k="rsale">مرتجع بيع<small style="font-weight:400">عميل رجّع بضاعة</small></button><button class="primary" style="flex-direction:column;gap:2px;background:var(--ink);color:var(--ink-fg)" data-a="newinv" data-k="rbuy">مرتجع شراء<small style="font-weight:400">رجّعت بضاعة لمورد</small></button></div>`)}
 function showMove(id){const m=S.moves.find(x=>x.id===id);if(!m)return;
@@ -1204,7 +1232,8 @@ document.addEventListener('click',async e=>{
     case 'close':closeSheet();break;
     case 'start':{const name=$('#w_name').value.trim()||'Aboud Store';await guard(()=>put('shop',{name,cash:num($('#w_cash').value),insta:num($('#w_insta').value),seq:0,created:Date.now()}));render();break}
     case 'newinv':closeSheet();newDraft(ds.k);break;
-    case 'cancelinv':if(S.draft.lines.length&&!S.sureCancel){S.sureCancel=true;toast('الفاتورة مش محفوظة. اضغط رجوع تاني للخروج');setTimeout(()=>S.sureCancel=false,3000);break}S.sureCancel=false;S.draft=null;S.view='home';render();break;
+    case 'cancelinv':{const ed=S.draft.edit;if(S.draft.lines.length&&!S.sureCancel){S.sureCancel=true;toast(ed?'التعديل مش محفوظ. اضغط تاني للخروج والفاتورة تفضل زي ما هي':'الفاتورة مش محفوظة. اضغط رجوع تاني للخروج');setTimeout(()=>S.sureCancel=false,3000);break}S.sureCancel=false;S.draft=null;S.view=ed?'invoices':'home';render();if(ed)showInvoice(ed);break}
+    case 'editinv':editFrom(ds.id);break;
     case 'pt':S.draft.pt=ds.k;S.draft.lines.forEach(l=>{const p=P(l.pid);if(p)l.price=String(ds.k==='whole'&&p.price2?p.price2:p.price)});render();break;
     case 'addline':addLine(ds.id);break;
     case 'qpick':qPick(ds.id);break;
