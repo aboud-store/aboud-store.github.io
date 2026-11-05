@@ -225,6 +225,9 @@ body.desk .top{top:50px}
 .dk-grid button{border:1px solid var(--ln);border-radius:9px;padding:7px 9px;background:var(--sf2);text-align:right;min-width:0}
 .dk-grid .qt{position:relative;min-width:0}.dk-grid .qt>button:first-child{width:100%;height:100%}.dk-grid .pin{position:absolute;top:3px;left:3px;border:0!important;background:none!important;padding:2px 4px!important;font-size:15px;line-height:1;color:var(--mut)}.dk-grid .pin.on{color:#c98a00}.dk-grid .qt>button:first-child b{padding-left:18px}
 .qsg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--mut);margin:0 0 8px}.qsg button{border:1px dashed var(--ac);color:var(--ac);background:var(--ac-soft);border-radius:16px;padding:3px 10px;font-size:12.5px}
+.qpick{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px}.qpick>button{display:flex;align-items:center;gap:8px;border:1.5px solid var(--ln);border-radius:10px;padding:8px 10px;background:var(--sf);text-align:right;min-width:0}
+.qpick>button.on{border-color:var(--ac);background:var(--ac-soft)}.qpick .ck{flex:none;width:20px;height:20px;border:1.5px solid var(--ln);border-radius:5px;display:grid;place-items:center;font-size:13px;color:#fff}.qpick .on .ck{background:var(--ac);border-color:var(--ac)}
+.qpick .nm{min-width:0}.qpick b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.qpick small{color:var(--mut);font-size:11.5px}
 .qchips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;margin-top:6px}.qchips button{flex:none;border:1px solid var(--ln);background:var(--sf);border-radius:18px;padding:7px 12px;font-size:13.5px;white-space:nowrap}.qchips .ed{color:var(--ac);border-color:var(--ac)}
 .dk-grid button:hover{border-color:var(--ac)}.dk-grid b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dk-grid span{font-size:11.5px;color:var(--mut)}
 .dk-side{display:flex;flex-direction:column;gap:10px;position:sticky;top:60px;max-height:calc(100vh - 100px);overflow:auto}
@@ -665,16 +668,19 @@ ${sg.length?`<div class="qsg"><span>💡 بيتباعوا كتير ومش في �
 function quickChips(){const d=S.draft;if(!d||d.ref)return '';const qi=quickIds();
   return `<div class="qchips">${qi.map(id=>{const p=P(id);return `<button data-a="addline" data-id="${id}">${esc(p.name)}</button>`}).join('')}<button class="ed" data-a="quickedit">${qi.length?'⚙ تظبيط':'★ ضيف أصناف للإدخال السريع'}</button></div>`}
 function refreshQuick(){const t=$('#d_tiles');if(t)t.innerHTML=tilesHtml();const c=$('.qchips');if(c)c.outerHTML=quickChips()}
-/* sheet to pick quick items + suggestions from sales */
-function quickSheet(){const m=soldMap(),q=(S.qeq||'').trim().toLowerCase(),qi=quickIds(),sg=quickSugg(12);
-  const list=q?S.products.filter(p=>p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase().includes(q)).slice(0,30):[];
-  const row=p=>{const on=isQuick(p.id);return `<div class="row"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${m[p.id]?`اتباع منه ${fmt(m[p.id])} قطعة مؤخراً · `:''}متاح ${fmt(p.qty)}</div></div><button class="${on?'ghost':'primary'}" style="flex:none;padding:6px 12px;width:auto" data-a="qpin" data-id="${p.id}" data-sh="1">${on?'شيل':'+ ضيف'}</button></div>`};
-  openSheet(`<h3>الإدخال السريع</h3><p class="mut" style="margin:0 0 12px">الأصناف اللي بتبيعها كتير، بتظهر في فاتورة البيع بضغطة واحدة.</p>
-<div class="sec-h"><h2>مختاره دلوقتي</h2><span class="mut">${qi.length} صنف</span></div>
-<div class="list" style="margin-bottom:14px">${qi.length?qi.map(id=>row(P(id))).join(''):'<div class="empty">لسه مفيش.</div>'}</div>
-${sg.length?`<div class="sec-h"><h2>💡 مقترحات (الأكثر مبيعاً)</h2>${sg.length>1?`<button class="linkbtn" data-a="qpinall" style="padding:0">ضيفهم كلهم</button>`:''}</div><div class="list" style="margin-bottom:14px">${sg.map(row).join('')}</div>`:''}
-<div class="sec-h"><h2>ضيف صنف تاني</h2></div><input id="qe_q" placeholder="اكتب اسم الصنف أو الكود" value="${esc(S.qeq||'')}" autocomplete="off" style="margin-bottom:8px">
-<div class="list" id="qe_res">${list.map(row).join('')}</div>`);const e=$('#qe_q');if(e&&S.qeq){e.focus();e.setSelectionRange(e.value.length,e.value.length)}}
+/* sheet to pick quick items: browse every product (filter by category / suggested / chosen / search) and tap to pick */
+function quickSheet(){S.qeq='';S.qcat='all';
+  const cats=[...new Set(S.products.map(p=>p.cat).filter(Boolean))],ch=(k,l)=>`<button class="${S.qcat===k?'on':''}" data-a="qcat" data-k="${esc(k)}">${l}</button>`;
+  openSheet(`<h3>اختار أصناف الإدخال السريع</h3><p class="mut" style="margin:0 0 10px">دوّر في الأصناف ودوس على اللي عايزه يظهر في فاتورة البيع. 💡 = بيتباع كتير.</p>
+<input id="qe_q" placeholder="ابحث باسم الصنف أو الكود (اختياري)" autocomplete="off" style="margin-bottom:8px">
+<div class="dk-cats" id="qe_cats">${ch('all','الكل')}${ch('chosen','★ المختار')}${ch('sugg','💡 مقترح')}${cats.map(c=>ch(c,esc(c))).join('')}</div>
+<div class="mini" id="qe_cnt" style="margin-bottom:6px"></div><div class="qpick" id="qe_res"></div>
+<button class="primary" style="position:sticky;bottom:0;margin-top:10px" data-a="close">تمام</button>`);qsList()}
+function qsList(){const el=$('#qe_res');if(!el)return;const m=soldMap(),q=(S.qeq||'').trim().toLowerCase(),c=S.qcat||'all',sg=new Set(quickSugg(12).map(p=>p.id));
+  let a=c==='chosen'?quickIds().map(P):c==='sugg'?quickSugg(30):c==='all'?S.products:S.products.filter(p=>p.cat===c);
+  if(q)a=a.filter(p=>p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase().includes(q));
+  el.innerHTML=a.length?a.map(p=>{const on=isQuick(p.id);return `<button class="${on?'on':''}" data-a="qpin" data-id="${p.id}"><span class="ck">${on?'✓':''}</span><span class="nm"><b>${esc(p.name)}${sg.has(p.id)?' 💡':''}</b><small>${p.code?esc(p.code)+' · ':''}متاح ${fmt(p.qty)}${m[p.id]?` · اتباع ${fmt(m[p.id])}`:''}</small></span></button>`}).join(''):'<div class="empty">مفيش أصناف هنا.</div>';
+  const n=$('#qe_cnt');if(n)n.textContent=`مختار ${quickIds().length} صنف · بيظهر ${a.length}`}
 function dRows(){const d=S.draft;
   if(!d.lines.length)return `<tr class="emp"><td colspan="9">${d.ref?'كل الأصناف اتشالت.':'اكتب اسم الصنف أو كوده فوق، أو دوس على صنف من تحت.'}</td></tr>`;
   return d.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===d.lines.length-1&&!d.ref?'last':''}"><td>${i+1}</td><td>${esc(p?.code||'')}</td><td class="n">${esc(l.name)}<span id="lm${i}" hidden></span></td>
@@ -1208,9 +1214,9 @@ document.addEventListener('click',async e=>{
     case 'saveinv':saveInvoice(ds.k==='new'||ds.k==='new0'?true:ds.k==='print'?'print':false);break;
     case 'nav':navTo(ds);break;
     case 'dcat':S.dcat=ds.k;$('#d_tiles').innerHTML=tilesHtml();break;
-    case 'quickedit':S.qeq='';quickSheet();break;
-    case 'qpin':{await toggleQuick(ds.id);if(S.sheetOpen)quickSheet();refreshQuick();break}
-    case 'qpinall':{const q=[...(S.shop.quick||[])];quickSugg(12).forEach(p=>q.push(p.id));await put('shop',{...S.shop,quick:q});quickSheet();refreshQuick();break}
+    case 'quickedit':quickSheet();break;
+    case 'qpin':{await toggleQuick(ds.id);if($('#qe_res'))qsList();refreshQuick();break}
+    case 'qcat':S.qcat=ds.k;document.querySelectorAll('#qe_cats button').forEach(x=>x.classList.toggle('on',x===b));qsList();break;
     case 'pm':{const d=S.draft;if(ds.k==='split'&&d.pm!=='split'){d.scash='';d.insta='';d.voda='';if(d.cashW!=='drawer'&&d.cashW!=='cash')d.cashW=defCW(d.kind)}d.pm=ds.k;d.paid='';render();if(ds.k==='split')setTimeout(()=>$('#d_insta')?.focus(),0);break}
     case 'printinv':{const i=S.invoices.find(x=>x.id===ds.id);if(i)printInvoice(i);break}
     case 'psize':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
@@ -1271,7 +1277,7 @@ document.addEventListener('input',e=>{
   else if(t.dataset.li!=null){const i=+t.dataset.li,l=S.draft.lines[i];l[t.dataset.f]=t.value;$('#lt'+i).textContent=fmt(lineTot(l));$('#lm'+i).innerHTML=lineMeta(l);refreshTotals()}
   else if(['d_disc','d_cash','d_insta','d_voda','d_scash','d_paid','d_tend'].includes(id)){S.draft[id.slice(2)]=t.value;refreshTotals()}
   else if(id.startsWith('cd_'))cdSum();
-  else if(id==='qe_q'){S.qeq=t.value;quickSheet()}
+  else if(id==='qe_q'){S.qeq=t.value;qsList()}
 });
 document.addEventListener('change',e=>{
   const id=e.target.id;
