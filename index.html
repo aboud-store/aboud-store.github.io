@@ -256,6 +256,13 @@ body.desk .top{top:50px}
 .pv .foot{text-align:center;margin-top:12px;font-size:12px}
 .pv.r80{padding:2mm 1mm;width:70mm;font-size:12px;font-weight:600}.pv.r80 b,.pv.r80 .big{font-weight:800}.pv.r80 h1{font-size:17px}.pv.r80 .meta{grid-template-columns:1fr}.pv.r80 .tot{width:100%}
 .pv.r80 th,.pv.r80 td{border:0;border-bottom:1px dashed #000;padding:3px 2px}.pv.r80 th{background:none}
+.pv.r80.sx{font-weight:500;font-size:12px;padding:2mm 2mm 6mm}.pv.sx h1{font-family:Arial,var(--fb);font-weight:500;font-size:19px;margin-top:2mm}.pv.sx .sx-k{text-align:center;font-size:13px;margin:2px 0 8px}
+.pv.sx .sx-m{margin:0 0 6px;border:0}.pv.sx .sx-m td{border:0;padding:2px 1px;text-align:right;white-space:nowrap}.pv.sx .sx-m td.vv{text-align:left;padding-inline-end:6px;font-variant-numeric:tabular-nums;white-space:normal}
+.pv.sx .sx-t{margin:4px 0}.pv.sx .sx-t th,.pv.sx .sx-t td{border:1px solid #000;padding:4px 3px;text-align:center;font-weight:500;background:none}.pv.sx .sx-t td.n,.pv.sx .sx-t th.n{text-align:right}
+.pv.sx .sx-t tr.t td{border:0}.pv.sx .sx-t tr.t td.v{border:1px solid #000;font-weight:600}.pv.sx .sx-t tr.t td.l{text-align:left;padding-inline-end:6px;font-weight:600}
+.pv.sx .sx-t tr.big td{font-size:15px;font-weight:800!important}.pv.sx .sx-n{margin-top:6px}
+.pv.sx .sx-f{text-align:center;font-size:20px;font-weight:800;margin:10px 0 6px}.pv.sx .sx-a,.pv.sx .sx-p{text-align:right;font-size:13px;margin:3px 0}.pv.sx .sx-p{font-variant-numeric:tabular-nums}
+.pv.sx .sx-q{text-align:center;margin-top:10px}.pv.sx .sx-q svg{width:32mm;height:32mm}
 </style>
 </head>
 <body>
@@ -951,12 +958,64 @@ async function saveDrawer(){const v=cdVals(),sh=S.shop;
     for(const k of EW)if(v[k]>0){await add({id:uid(),type:'close',amount:r2(v[k]),method:k,to:'cash',ts:ts++,day,note:''});tot+=v[k]}
     closeSheet();toast(`اتقفل اليوم واتحوّل ${fmt(r2(tot))} للخزنة`)});
 }
+/* ---------- tiny QR encoder (byte mode, ECC M, versions 1-10) -> SVG; works offline ---------- */
+function qrSvg(text,px){const ECC=[0,10,16,26,18,24,16,18,22,22,26],NB=[0,1,1,1,2,2,4,4,4,5,5];
+  const bytes=[...new TextEncoder().encode(text)];
+  const raw=v=>{let r=(16*v+128)*v+64;if(v>=2){const n=Math.floor(v/7)+2;r-=(25*n-10)*n-55;if(v>=7)r-=36}return r};
+  let ver=1;for(;ver<=10;ver++){const cap=Math.floor(raw(ver)/8)-ECC[ver]*NB[ver];if(4+(ver<10?8:16)+bytes.length*8<=cap*8)break}if(ver>10)return '';
+  const cap=Math.floor(raw(ver)/8)-ECC[ver]*NB[ver],bb=[],ap=(v,n)=>{for(let i=n-1;i>=0;i--)bb.push((v>>>i)&1)};
+  ap(4,4);ap(bytes.length,ver<10?8:16);bytes.forEach(b=>ap(b,8));ap(0,Math.min(4,cap*8-bb.length));ap(0,(8-bb.length%8)%8);
+  for(let pd=0xEC;bb.length<cap*8;pd^=0xEC^0x11)ap(pd,8);
+  const data=[];for(let i=0;i<bb.length;i+=8)data.push(parseInt(bb.slice(i,i+8).join(''),2));
+  const mul=(x,y)=>{let z=0;for(let i=7;i>=0;i--){z=(z<<1)^((z>>>7)*0x11D);z^=((y>>>i)&1)*x}return z&255};
+  const ec=ECC[ver],dv=new Array(ec).fill(0);dv[ec-1]=1;let root=1;for(let i=0;i<ec;i++){for(let j=0;j<ec;j++){dv[j]=mul(dv[j],root);if(j+1<ec)dv[j]^=dv[j+1]}root=mul(root,2)}
+  const rem=d=>{const r=new Array(ec).fill(0);d.forEach(b=>{const f=b^r.shift();r.push(0);dv.forEach((c,i)=>r[i]^=mul(c,f))});return r};
+  const nb=NB[ver],rc=Math.floor(raw(ver)/8),ns=nb-rc%nb,sl=Math.floor(rc/nb),blocks=[];
+  for(let i=0,k=0;i<nb;i++){const dat=data.slice(k,k+sl-ec+(i<ns?0:1));k+=dat.length;const e=rem(dat);if(i<ns)dat.push(0);blocks.push(dat.concat(e))}
+  const cw=[];for(let i=0;i<blocks[0].length;i++)blocks.forEach((b,j)=>{if(i!==sl-ec||j>=ns)cw.push(b[i])});
+  const n=ver*4+17,M=[...Array(n)].map(()=>Array(n).fill(false)),F=[...Array(n)].map(()=>Array(n).fill(false)),set=(x,y,v)=>{M[y][x]=v;F[y][x]=true};
+  for(let i=0;i<n;i++){set(6,i,i%2===0);set(i,6,i%2===0)}
+  [[3,3],[n-4,3],[3,n-4]].forEach(([cx,cy])=>{for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const x=cx+dx,y=cy+dy,d=Math.max(Math.abs(dx),Math.abs(dy));if(x>=0&&x<n&&y>=0&&y<n)set(x,y,d!==2&&d!==4)}});
+  if(ver>1){const na=Math.floor(ver/7)+2,st=Math.ceil((ver*4+4)/(na*2-2))*2,pos=[6];for(let i=na-2;i>=0;i--)pos.push(n-7-i*st);
+    pos.forEach((x,a)=>pos.forEach((y,b)=>{if((a===0&&b===0)||(a===0&&b===na-1)||(a===na-1&&b===0))return;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)set(x+dx,y+dy,Math.max(Math.abs(dx),Math.abs(dy))!==1)}))}
+  const mask=0,fd=(0<<3)|mask;let r=fd;for(let i=0;i<10;i++)r=(r<<1)^((r>>>9)*0x537);const fb=((fd<<10)|r)^0x5412,g=i=>((fb>>>i)&1)===1;
+  for(let i=0;i<=5;i++)set(8,i,g(i));set(8,7,g(6));set(8,8,g(7));set(7,8,g(8));for(let i=9;i<15;i++)set(14-i,8,g(i));
+  for(let i=0;i<8;i++)set(n-1-i,8,g(i));for(let i=8;i<15;i++)set(8,n-15+i,g(i));set(8,n-8,true);
+  if(ver>=7){let v=ver;for(let i=0;i<12;i++)v=(v<<1)^((v>>>11)*0x1F25);const vb=(ver<<12)|v;for(let i=0;i<18;i++){const b=((vb>>>i)&1)===1,a=n-11+i%3,c=Math.floor(i/3);set(a,c,b);set(c,a,b)}}
+  let bi=0;for(let right=n-1;right>=1;right-=2){if(right===6)right=5;for(let vt=0;vt<n;vt++)for(let j=0;j<2;j++){const x=right-j,up=((right+1)&2)===0,y=up?n-1-vt:vt;
+    if(!F[y][x]&&bi<cw.length*8){M[y][x]=((cw[bi>>>3]>>>(7-(bi&7)))&1)===1;bi++}}}
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(!F[y][x]&&(x+y)%2===0)M[y][x]=!M[y][x];
+  let d='';for(let y=0;y<n;y++)for(let x=0;x<n;x++)if(M[y][x])d+=`M${x+4},${y+4}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n+8} ${n+8}" width="${px}" height="${px}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`}
+/* 80mm receipt, same layout as the old «سهل» receipt */
+function receipt80(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),paid=paidOf(i),pp=payParts(i);
+  const f2=v=>(+v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),d=new Date(i.ts),p2=x=>String(x).padStart(2,'0');
+  const dt=`${d.getFullYear()}/${p2(d.getMonth()+1)}/${p2(d.getDate())}`,ht=`${d.getHours()%12||12}:${p2(d.getMinutes())} ${d.getHours()<12?'AM':'PM'}`;
+  const kindTxt=rt?(i.rest?'خصم من الحساب':'نقدي'):(i.rest?(paid?'نقدي + آجل':'آجل'):'نقدي');
+  const T=(l,v,c='')=>`<tr class="t ${c}"><td colspan="3" class="l">${l}</td><td class="v">${v}</td></tr>`;
+  const pl=k=>k==='drawer'||k==='cash'?'كاش':W[k];
+  let tot='';if(i.disc)tot+=T('الإجمالي',f2(i.sub))+T('الخصم',f2(i.disc));
+  tot+=T(rt?'قيمة المرتجع':'المطلوب',f2(i.total),'big');
+  if(pp.length>1)tot+=pp.map(([k,v])=>T(pl(k),f2(v))).join('');
+  tot+=rt?(paid?T('اترجع فلوس',f2(paid)):'')+(i.rest?T('اتخصم من الحساب',f2(i.rest)):''):T(pp.length===1&&pp[0][0]!=='drawer'&&pp[0][0]!=='cash'?'المدفوع '+W[pp[0][0]]:'المدفوع',f2(paid))+(i.rest?T('الباقي آجل',f2(i.rest)):'');
+  if(pt&&i.balBefore!=null)tot+=T('الرصيد السابق',f2(i.balBefore))+T(cust?'إجمالي الحساب':'الرصيد بعد الفاتورة',f2(i.balAfter),'big');
+  const phones=(sh.phone||'').split(/[\s,،\/-]+/).filter(x=>x.length>3);
+  const qr=qrSvg(`${sh.name||'Aboud Store'}\n${rt?KN[i.kind]:'فاتورة '+KN[i.kind]} ${i.no}\n${dt} ${ht}\n${rt?'قيمة المرتجع':'المطلوب'} ${f2(i.total)}${phones.length?'\n'+phones.join(' '):''}`,110);
+  return `<div class="pv r80 sx"><h1>${esc(sh.name||'Aboud Store')}</h1><div class="sx-k">${rt?KN[i.kind]:'فاتورة '+KN[i.kind]}${rt&&i.refNo?` (من ${i.refNo})`:''}</div>
+<table class="sx-m"><tr><td>رقم الفاتورة</td><td class="vv">${i.no}</td><td>التاريخ</td><td class="vv"><bdi dir="ltr">${dt}</bdi></td></tr>
+<tr><td>نوع الفاتورة</td><td class="vv">${kindTxt}</td><td>الوقت</td><td class="vv"><bdi dir="ltr">${ht}</bdi></td></tr>
+<tr><td>${cust?'العميل':'المورد'}</td><td class="vv">${esc(i.partyName)}</td><td>تستحق</td><td class="vv"><bdi dir="ltr">${dt}</bdi></td></tr></table>
+<table class="sx-t"><thead><tr><th class="n">اسم الصنف</th><th>كمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>
+${i.lines.map(l=>`<tr><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${f2(l.price)}</td><td>${f2(l.qty*l.price)}</td></tr>`).join('')}${tot}</tbody></table>
+${i.note?`<div class="sx-n">ملاحظة: ${esc(i.note)}</div>`:''}
+<div class="sx-f">${esc(sh.foot||'شكرا لزيارتكم')}</div>${sh.addr?`<div class="sx-a">${esc(sh.addr)}</div>`:''}${phones.map(x=>`<div class="sx-p">${esc(x)}</div>`).join('')}
+${qr?`<div class="sx-q">${qr}</div>`:''}</div>`}
 function printInvoice(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),r80=sh.printSize==='80';
   const title=rt?KN[i.kind]:'فاتورة '+KN[i.kind],d=new Date(i.ts),dt=`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`,ht=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`,paid=paidOf(i),pp=payParts(i),pdet=pp.length>1?pp.map(([k,v])=>`<div><span>&nbsp;&nbsp;${k==='drawer'||k==='cash'?'كاش':W[k]}</span><b>${fmt(v)}</b></div>`).join(''):'';
   const rows=i.lines.map((l,k)=>{const p=P(l.pid);return r80?`<tr><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`
     :`<tr><td>${k+1}</td><td>${esc(p?.code||'')}</td><td class="n">${esc(l.name)}</td><td>${fmt(l.qty)}</td><td>${fmt(l.price)}</td><td>${fmt(l.qty*l.price)}</td></tr>`}).join('');
   const qty=sum(i.lines,'qty');
-  const html=`<div class="pv ${r80?'r80':''}"><h1>${esc(sh.name||'Aboud Store')}</h1>${sh.addr?`<div class="sub">${esc(sh.addr)}</div>`:''}${sh.phone?`<div class="sub">ت: ${esc(sh.phone)}</div>`:''}
+  const html=r80?receipt80(i):`<div class="pv ${r80?'r80':''}"><h1>${esc(sh.name||'Aboud Store')}</h1>${sh.addr?`<div class="sub">${esc(sh.addr)}</div>`:''}${sh.phone?`<div class="sub">ت: ${esc(sh.phone)}</div>`:''}
 <div class="ttl">${title}${rt&&i.refNo?` (من فاتورة ${i.refNo})`:''}</div>
 <div class="meta"><div>رقم الفاتورة: <b>${i.no}</b></div><div>التاريخ: ${dt} · ${ht}</div><div>${cust?'العميل':'المورد'}: <b>${esc(i.partyName)}</b></div>${pt?.phone?`<div>موبايل: ${esc(pt.phone)}</div>`:''}</div>
 <table><thead><tr>${r80?'<th>الصنف</th><th>كمية</th><th>سعر</th><th>إجمالي</th>':'<th>م</th><th>الكود</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th>'}</tr></thead><tbody>${rows}</tbody></table>
