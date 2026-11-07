@@ -605,6 +605,7 @@ async function loadReport(){
   let inv=[],mv=[];
   try{[inv,mv]=await Promise.all([fetchWhere('invoices','day','>=',f,'day','<=',t),fetchWhere('moves','day','>=',f,'day','<=',t)])}catch(e){const el=$('#rep');if(el)el.innerHTML='<div class="empty">مش قادر أجيب التقرير دلوقتي.</div>';return}
   if(S.repTok!==tok||S.view!=='reports')return;
+  S.repData={f,t,inv,mv};
   const sales=inv.filter(i=>i.kind==='sale'),buys=inv.filter(i=>i.kind==='buy'),rs=inv.filter(i=>i.kind==='rsale'),rb=inv.filter(i=>i.kind==='rbuy');
   const exp=mv.filter(m=>m.type==='expense');
   const gross=sum(sales,'profit')+sum(rs,'profit'),expT=sum(exp,'amount'),net=gross-expT,salesT=sum(sales,'total')-sum(rs,'total');
@@ -634,7 +635,7 @@ ${cats.length?`<div class="sec"><div class="sec-h"><h2>المصاريف حسب �
 <div class="sec"><div class="sec-h"><h2>أكتر الأصناف ربحاً</h2><span class="mut">قبل خصم الفاتورة</span></div>
 <div class="list">${top.length?top.map(x=>`<div class="row"><div class="main"><div class="t">${esc(x.name)}</div><div class="s">اتباع ${fmt(x.qty)} · مبيعات ${fmt(x.rev)}</div><div class="bar"><i style="width:${Math.max(2,x.pr/maxP*100)}%"></i></div></div><div class="amt pos">${fmt(x.pr)}</div></div>`).join(''):'<div class="empty">مفيش مبيعات في الفترة دي.</div>'}</div></div>
 ${Object.keys(days).length>1?`<div class="sec"><div class="sec-h"><h2>المبيعات يوم بيوم</h2></div><div class="list">${Object.entries(days).sort((a,b)=>b[0]<a[0]?-1:1).map(([d,v])=>`<div class="row"><div class="main"><div class="t">${new Date(d+'T12:00').toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</div></div><div class="amt">${fmt(v)}</div></div>`).join('')}</div></div>`:''}
-${inv.length>=1000||mv.length>=1000?'<div class="note">الفترة دي فيها حركات كتير، التقرير بيحسب أول 1,000 حركة بس. اختار فترة أقصر.</div>':''}`;
+${inv.length>=1000||mv.length>=1000?'<div class="note">الفترة دي فيها حركات كتير، التقرير بيحسب أول 1,000 حركة بس. اختار فترة أقصر.</div>':''}`+repListHtml();
 }
 
 /* ---------- invoice editor ---------- */
@@ -1140,29 +1141,33 @@ ${i.note?`<div style="margin-top:8px">ملاحظة: ${esc(i.note)}</div>`:''}
 /* ---------- WhatsApp documents: كشف حساب / فاتورة as an image or PDF, drawn on canvas with the logo (works offline, no libraries) ---------- */
 const DOC={W:1240,H:1754,M:60,ink:'#1D2930',ac:'#A06C16',acS:'#F6EEDC',ln:'#DDE2DB',mut:'#5C686E',alt:'#F6F7F4',good:'#22784A',bad:'#B93C32'};
 let LOGO_IMG=null;
-function docLogo(){return LOGO_IMG?Promise.resolve(LOGO_IMG):new Promise(ok=>{const im=new Image();im.onload=()=>ok(LOGO_IMG=im);im.onerror=()=>ok(null);im.src=RLOGO})}
+function docLogo(){return LOGO_IMG?Promise.resolve(LOGO_IMG):new Promise(ok=>{const im=new Image();im.onload=()=>{const cv=document.createElement('canvas');cv.width=im.naturalWidth;cv.height=im.naturalHeight;const c=cv.getContext('2d');
+    c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(im,0,0);c.globalCompositeOperation='lighten';c.fillStyle=DOC.ink;c.fillRect(0,0,cv.width,cv.height);ok(LOGO_IMG=cv)};im.onerror=()=>ok(null);im.src=RLOGO})}
 async function docFonts(){try{await Promise.race([Promise.all([document.fonts.load('400 22px "IBM Plex Sans Arabic"'),document.fonts.load('600 22px "IBM Plex Sans Arabic"'),document.fonts.load('700 30px "Readex Pro"')]),new Promise(r=>setTimeout(r,2500))])}catch(e){}}
 function docPrep(){docLogo();docFonts()}
 const DF=(w,s,d)=>`${w} ${s}px ${d?'"Readex Pro",':''}"IBM Plex Sans Arabic",Tahoma,sans-serif`;
 const dmy=d=>`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
 const dayDmy=day=>{const [y,m,d]=day.split('-');return `${+d}/${+m}/${y}`};
-/* spec: {title, sub, info:[[label,value]], cols:[{t,w(0=flex),n(number)}], rows:[{v:[..], tone:{col:color}}], totals:[[label,value,big,color]], note, file} */
+/* spec: {title, sub, info:[[label,value]], kpis:[[label,value,color]], sections:[{h, cols:[{t,w(0=flex),n}], rows:[{v,tone,bold}], empty, totals}],
+   or a single table via cols/rows; then totals:[[label,value,big,color]], side:[label,value,color], note, file} */
 async function docPages(spec,tall){
   await docFonts();const lg=await docLogo();
-  const D=DOC,M=D.M,Wd=D.W,RH=48,TH=52,FT=70,sh=S.shop||{};
+  const D=DOC,M=D.M,Wd=D.W,RH=48,TH=52,FT=70,sh=S.shop||{},tw=Wd-2*M;
+  const secs=spec.sections||[{cols:spec.cols,rows:spec.rows,empty:spec.empty}];
   const phones=(sh.phone||'').split(/[\s,،\/-]+/).filter(x=>x.length>3),subLine=[sh.addr,phones.join('  •  ')].filter(Boolean).join('     |     ');
-  const hdrH=(lg?126:0)+(sh.name?42:0)+(subLine?30:0)+30,infoH=Math.ceil(spec.info.length/2)*54+16;
-  const totH=20+spec.totals.length*50+(spec.note?64:0);
-  let H=D.H;if(tall)H=M+hdrH+84+infoH+TH+Math.max(1,spec.rows.length)*RH+totH+40+FT+M;
-  const tw=Wd-2*M,fixed=sum(spec.cols,'w'),flex=tw-fixed;const cw=spec.cols.map(c=>c.w||flex);
+  const hdrH=(lg?126:0)+(sh.name?42:0)+(subLine?30:0)+30,infoH=spec.info&&spec.info.length?Math.ceil(spec.info.length/2)*54+16:0,kpiH=spec.kpis?126:0;
+  const totN=(spec.totals||[]).length,totH=totN?20+totN*50:0,noteH=spec.note?64:0;
+  const secH=s=>(s.h?56:0)+TH+Math.max(1,s.rows.length)*RH+((s.totals||[]).length?16+s.totals.length*50:0)+26;
+  let H=D.H;if(tall){H=M+hdrH+84+infoH+kpiH+sum(secs,secH)+totH+noteH+30+FT+M;if(H>14000)return null}
   const pages=[];let c,y;
   const T=(t,x,yy,f,col,al,ltr)=>{c.font=f;c.fillStyle=col;c.textAlign=al;c.direction=ltr?'ltr':'rtl';c.fillText(t,x,yy);c.direction='rtl'};
   const fit=(t,w,f)=>{c.font=f;t=String(t??'');if(c.measureText(t).width<=w)return t;while(t.length>1&&c.measureText(t+'…').width>w)t=t.slice(0,-1);return t+'…'};
   const rr=(x,yy,w,h,r,fill,stroke)=>{c.beginPath();if(c.roundRect)c.roundRect(x,yy,w,h,r);else c.rect(x,yy,w,h);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=1.5;c.stroke()}};
   const newPage=()=>{const cv=document.createElement('canvas');cv.width=Wd;cv.height=H;c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,Wd,H);c.textBaseline='middle';c.direction='rtl';pages.push(cv);y=M;
-    if(pages.length>1){T(`${sh.name||'Aboud Store'} — ${spec.title}${spec.sub?' '+spec.sub:''}`,Wd-M,y+14,DF(600,20),D.mut,'right');c.fillStyle=D.ac;c.fillRect(M,y+34,tw,2);y+=52}};
-  const head=()=>{rr(M,y,tw,TH,10,D.ink);let x=Wd-M;spec.cols.forEach((col,j)=>{T(col.t,col.w?x-cw[j]/2:x-18,y+TH/2,DF(600,20),'#fff',col.w?'center':'right');x-=cw[j]});y+=TH};
-  const bottom=()=>H-M-FT;
+    if(pages.length>1){T(`${sh.name||'Aboud Store'} — ${spec.title}${spec.sub?' · '+spec.sub:''}`,Wd-M,y+14,DF(600,20),D.mut,'right');c.fillStyle=D.ac;c.fillRect(M,y+34,tw,2);y+=52}};
+  const room=h=>{if(!tall&&y+h>H-M-FT)newPage()};
+  const totBlock=(list,x0,w)=>list.forEach(([l,v,big,col])=>{if(big)rr(x0,y+2,w,46,10,D.acS);else{c.fillStyle=D.ln;c.fillRect(x0,y+49,w,1)}
+    T(l,x0+w-20,y+25,DF(big?700:400,big?24:21,big),big?D.ink:D.mut,'right');T(v,x0+20,y+25,DF(big?700:600,big?26:22,big),col||D.ink,'left',true);y+=50});
   newPage();
   /* header: logo, shop name, address/phones, brass rule */
   if(lg){const h=118,w=Math.min(tw,h*lg.width/lg.height);c.drawImage(lg,(Wd-w)/2,y,w,h);y+=126}
@@ -1172,26 +1177,29 @@ async function docPages(spec,tall){
   /* title band */
   rr(M,y,tw,66,12,D.ink);T(spec.title,Wd-M-26,y+34,DF(700,32,1),'#fff','right');if(spec.sub)T(spec.sub,M+26,y+34,DF(600,24),'#E7C680','left');y+=84;
   /* info boxes, two per row */
-  const bw=(tw-16)/2;spec.info.forEach(([l,v],k)=>{const x=k%2?M:M+bw+16,yy=y+Math.floor(k/2)*54;rr(x,yy,bw,44,10,D.acS);
-    T(l,x+bw-18,yy+22,DF(400,19),D.mut,'right');c.font=DF(400,19);const lw=c.measureText(l).width;T(fit(v,bw-lw-56,DF(600,22)),x+18,yy+22,DF(600,22),D.ink,'left')});
-  y+=infoH;
-  /* table */
-  head();
-  if(!spec.rows.length){T(spec.empty||'مفيش حركات',Wd/2,y+RH/2,DF(400,20),D.mut,'center');y+=RH}
-  spec.rows.forEach((r,i)=>{
-    if(!tall&&y+RH>bottom()){newPage();head()}
-    if(i%2)rr(M,y,tw,RH,0,D.alt);c.fillStyle=D.ln;c.fillRect(M,y+RH-1,tw,1);
-    let x=Wd-M;spec.cols.forEach((col,j)=>{const v=r.v[j];if(v!==''&&v!=null){const f=DF(col.n&&!r.bold?400:600,21),tc=(r.tone&&r.tone[j])||D.ink;
-      if(col.w)T(fit(v,cw[j]-14,f),x-cw[j]/2,y+RH/2,f,tc,'center',col.n);else T(fit(v,cw[j]-30,f),x-18,y+RH/2,f,tc,'right')}x-=cw[j]});
-    y+=RH});
-  /* totals box on the left, with a thin frame */
-  if(!tall&&y+totH>bottom())newPage();
-  y+=20;const tx=M,tW=600;
-  spec.totals.forEach(([l,v,big,col])=>{if(big)rr(tx,y+2,tW,46,10,D.acS);else{c.fillStyle=D.ln;c.fillRect(tx,y+49,tW,1)}
-    T(l,tx+tW-20,y+25,DF(big?700:400,big?24:21,big),big?D.ink:D.mut,'right');T(v,tx+20,y+25,DF(big?700:600,big?26:22,big),col||D.ink,'left',true);y+=50});
-  if(spec.side){const sx=tx+tW+30,sw=Wd-M-sx,sy=y-spec.totals.length*50;rr(sx,sy+2,sw,96,14,null,D.ac);
-    T(spec.side[0],sx+sw/2,sy+30,DF(600,21),D.mut,'center');T(spec.side[1],sx+sw/2,sy+68,DF(700,32,1),spec.side[2]||D.ink,'center')}
-  if(spec.note){y+=14;T(fit('ملاحظة: '+spec.note,tw,DF(400,20)),Wd-M,y+20,DF(400,20),D.mut,'right');y+=50}
+  if(infoH){const bw=(tw-16)/2;spec.info.forEach(([l,v],k)=>{const x=k%2?M:M+bw+16,yy=y+Math.floor(k/2)*54;rr(x,yy,bw,44,10,D.acS);
+    T(l,x+bw-18,yy+22,DF(400,19),D.mut,'right');c.font=DF(400,19);const lw=c.measureText(l).width;T(fit(v,bw-lw-56,DF(600,22)),x+18,yy+22,DF(600,22),D.ink,'left')});y+=infoH}
+  /* KPI tiles */
+  if(kpiH){const n=spec.kpis.length,g=14,kw=(tw-g*(n-1))/n;spec.kpis.forEach(([l,v,col],k)=>{const x=Wd-M-kw-k*(kw+g);rr(x,y,kw,110,14,'#fff',D.ln);c.fillStyle=D.ac;c.fillRect(x+kw-6,y+14,3,82);
+    T(fit(l,kw-40,DF(400,19)),x+kw-22,y+34,DF(400,19),D.mut,'right');T(fit(v,kw-40,DF(700,30,1)),x+kw-22,y+76,DF(700,30,1),col||D.ink,'right',false)});y+=kpiH}
+  /* sections */
+  secs.forEach(s=>{const fixed=sum(s.cols,'w'),cw=s.cols.map(col=>col.w||tw-fixed);
+    const head=()=>{rr(M,y,tw,TH,10,D.ink);let x=Wd-M;s.cols.forEach((col,j)=>{T(col.t,col.w?x-cw[j]/2:x-18,y+TH/2,DF(600,20),'#fff',col.w?'center':'right');x-=cw[j]});y+=TH};
+    room((s.h?56:0)+TH+RH*Math.min(3,Math.max(1,s.rows.length)));
+    if(s.h){T(s.h,Wd-M,y+24,DF(700,25,1),D.ink,'right');c.font=DF(700,25,1);const hw=c.measureText(s.h).width;c.fillStyle=D.ac;c.fillRect(M,y+25,tw-hw-24,2);y+=56}
+    head();
+    if(!s.rows.length){T(s.empty||'مفيش حركات',Wd/2,y+RH/2,DF(400,20),D.mut,'center');y+=RH}
+    s.rows.forEach((r,i)=>{if(!tall&&y+RH>H-M-FT){newPage();head()}
+      if(r.bold)rr(M,y,tw,RH,0,D.acS);else if(i%2)rr(M,y,tw,RH,0,D.alt);c.fillStyle=D.ln;c.fillRect(M,y+RH-1,tw,1);
+      let x=Wd-M;s.cols.forEach((col,j)=>{const v=r.v[j];if(v!==''&&v!=null){const f=DF(col.n&&!r.bold?400:600,21),tc=(r.tone&&r.tone[j])||D.ink;
+        if(col.w)T(fit(v,cw[j]-14,f),x-cw[j]/2,y+RH/2,f,tc,'center',col.n);else T(fit(v,cw[j]-30,f),x-18,y+RH/2,f,tc,'right')}x-=cw[j]});
+      y+=RH});
+    if((s.totals||[]).length){room(16+s.totals.length*50);y+=16;totBlock(s.totals,M,600)}
+    y+=26});
+  /* overall totals box on the left, status box on the right */
+  if(totN){room(totH);y+=20;const y0=y;totBlock(spec.totals,M,600);
+    if(spec.side){const sx=M+630,sw=Wd-M-sx;rr(sx,y0+2,sw,96,14,null,D.ac);T(spec.side[0],sx+sw/2,y0+30,DF(600,21),D.mut,'center');T(spec.side[1],sx+sw/2,y0+68,DF(700,32,1),spec.side[2]||D.ink,'center')}}
+  if(spec.note){room(noteH);y+=14;T(fit('ملاحظة: '+spec.note,tw,DF(400,20)),Wd-M,y+20,DF(400,20),D.mut,'right');y+=50}
   /* footer on every page */
   const n=pages.length,now=new Date(),stamp=`${dmy(now)}  ${now.getHours()%12||12}:${String(now.getMinutes()).padStart(2,'0')} ${now.getHours()<12?'ص':'م'}`;
   pages.forEach((cv,k)=>{c=cv.getContext('2d');c.textBaseline='middle';const fy=H-M-FT+20;c.fillStyle=D.ln;c.fillRect(M,fy,tw,1.5);
@@ -1249,12 +1257,13 @@ ${k==='st'?`<label class="f"><span>من تاريخ (سيبه فاضي للكشف
 <button class="ghost" style="width:100%;margin-top:8px" data-a="docshare" data-k="${k}" data-id="${id}" data-f="pdf" data-dl="1">⬇️ تنزيل PDF على الجهاز</button><div id="docready" style="margin-top:8px"></div>`}
 async function docMake(k,id,f){let spec,party;
   if(k==='inv'){const i=await getInv(id);if(!i)return null;spec=invSpec(i);party=PT(i.partyId)}
+  else if(k==='rep'){spec=repSpec(id);if(!spec)return null}
   else{const st=S.stmt;if(!st||st.p.id!==id)return null;spec=stmtSpec(st,$('#st_from')?.value||'');party=st.p}
-  const pages=await docPages(spec,f==='png');
+  const pages=await docPages(spec,f==='png');if(!pages)return {long:1};
   const blob=f==='png'?await new Promise((ok,no)=>pages[0].toBlob(b=>b?ok(b):no(new Error('png')),'image/png')):await pdfFrom(pages);
   return {blob,name:spec.file.replace(/[\\/:*?"<>|#]/g,'').replace(/\s+/g,' ').trim()+'.'+f,phone:party?.phone||''}}
 async function docShare(b){const ds=b.dataset,old=b.textContent;b.disabled=true;b.textContent='بيجهز…';
-  try{const r=await docMake(ds.k,ds.id,ds.f);if(!r){toast('مش لاقي البيانات، اقفل وافتح تاني');return}S.docLast=r;if(ds.dl)docDownload(r);else await docSend(r)}
+  try{const r=await docMake(ds.k,ds.id,ds.f);if(!r){toast('مش لاقي البيانات، اقفل وافتح تاني');return}if(r.long){toast('التقرير طويل على صورة واحدة، ابعته PDF');return}S.docLast=r;if(ds.dl)docDownload(r);else await docSend(r)}
   catch(e){console.error(e);toast('حصلت مشكلة في تجهيز الملف')}finally{b.disabled=false;b.textContent=old}}
 async function docSend(r){const file=new File([r.blob],r.name,{type:r.blob.type});
   if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return}
@@ -1262,6 +1271,96 @@ async function docSend(r){const file=new File([r.blob],r.name,{type:r.blob.type}
   docDownload(r)}
 function docDownload(r){const u=URL.createObjectURL(r.blob),a=document.createElement('a');a.href=u;a.download=r.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),120000);
   const el=$('#docready'),wa=waLink(r.phone);if(el)el.innerHTML=`<div class="note">الملف «${esc(r.name)}» اتنزل على الجهاز. افتح شات العميل في الواتساب وابعته كمرفق.</div>${wa?`<a class="ghost" style="display:block;text-align:center;text-decoration:none;color:var(--fg);margin-top:8px" href="${wa}" target="_blank" rel="noopener">فتح واتساب ${esc(r.phone)}</a>`:''}`}
+/* ---------- report documents (period from the reports page, or current balances) ---------- */
+const REPS=[['mov','حركة الخزنة واليومية','كل اللي دخل وخرج، بالخزن ويوم بيوم'],['sales','المبيعات والأرباح','فواتير البيع والمرتجعات وربح كل فاتورة'],['items','الأصناف المباعة','كمية ومبيعات وربح كل صنف'],
+  ['exp','المصاريف','حسب النوع وبالتفصيل'],['buy','المشتريات','فواتير الشراء ومرتجعاتها'],['cp','التحصيلات والسداد','اللي اتحصل من العملاء واتدفع للموردين'],
+  ['cust','أرصدة العملاء','كل عميل عليه أو ليه كام (دلوقتي)'],['supp','أرصدة الموردين','كل مورد ليه أو عليه كام (دلوقتي)'],['stock','المخزن وقيمة البضاعة','الكميات والتكلفة والنواقص (دلوقتي)']];
+const PERIODIC=new Set(['mov','sales','items','exp','buy','cp']);
+const sgnTone=v=>v<0?DOC.bad:v>0?DOC.good:DOC.ink;
+const whenTxt=(ts,multi)=>{const d=new Date(ts),h=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`;return multi?`${d.getDate()}/${d.getMonth()+1} ${h}`:h};
+/* money each record moved: in/out of the boxes (transfers move between boxes and count in neither total) */
+function flowsOf(x){
+  if(x.kind){const out=x.kind==='buy'||x.kind==='rsale',pp=payParts(x);const t=pp.map(([k,v])=>({k,v:out?-v:v}));return t}
+  const k=W[x.method]?x.method:'cash';
+  if(x.type==='transfer'||x.type==='close')return[{k,v:-x.amount,tr:1},{k:mvTo(x),v:x.amount,tr:1}];
+  if(x.type==='padj')return[];
+  const dl={collect:1,in:1,adj:1,expense:-1,pay:-1,out:-1}[x.type]||0;return[{k,v:dl*x.amount}]}
+function recLabel(x){if(x.kind)return [isRet(x.kind)?`${KN[x.kind]} #${x.no}`:`فاتورة ${KN[x.kind]} #${x.no}`,x.partyName||''];
+  const nm=x.type==='transfer'?`تحويل ${W[x.method]} ← ${W[mvTo(x)]}`:x.type==='close'?`تقفيل ${W[x.method]} ← الخزنة`:MOVE[x.type]||x.type;
+  return [nm,[x.partyName,x.cat,x.note].filter(Boolean).join(' · ')]}
+function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f===t?dayDmy(f):`${dayDmy(f)} ← ${dayDmy(t)}`;
+  const inv=(R.inv||[]).slice().sort((a,b)=>a.ts-b.ts),mv=(R.mv||[]).slice().sort((a,b)=>a.ts-b.ts),[,title]=REPS.find(r=>r[0]===key)||[];
+  const sales=inv.filter(i=>i.kind==='sale'),buys=inv.filter(i=>i.kind==='buy'),rs=inv.filter(i=>i.kind==='rsale'),rb=inv.filter(i=>i.kind==='rbuy'),exp=mv.filter(m=>m.type==='expense');
+  const gross=r2(sum(sales,'profit')+sum(rs,'profit')),expT=r2(sum(exp,'amount')),salesT=r2(sum(sales,'total')-sum(rs,'total'));
+  const base={title:'تقرير '+title,sub:PERIODIC.has(key)?per:dmy(new Date()),file:`تقرير ${title} ${PERIODIC.has(key)?per.replace(/\//g,'-').replace(' ← ',' الى '):today()}`,
+    info:PERIODIC.has(key)?[['الفترة',f===t?dayDmy(f):`من ${dayDmy(f)} إلى ${dayDmy(t)}`],['المحل',S.shop?.name||'']]:[['الأرصدة بتاريخ',dmy(new Date())],['المحل',S.shop?.name||'']]};
+  if(key==='mov'){
+    const all=[...inv,...mv].sort((a,b)=>a.ts-b.ts);let tin=0,tout=0;const box={};WK.forEach(k=>box[k]={i:0,o:0});
+    const rows=all.map(x=>{const fl=flowsOf(x);let i=0,o=0;fl.forEach(z=>{const b=box[z.k]||(box[z.k]={i:0,o:0});if(z.v>0)b.i+=z.v;else b.o-=z.v;if(!z.tr){if(z.v>0)i+=z.v;else o-=z.v}});tin+=i;tout+=o;
+      const [a,b]=recLabel(x);return {v:[whenTxt(x.ts,multi),a,b,i?fmt(i):'',o?fmt(o):''],tone:{3:DOC.good,4:DOC.bad}}});
+    const secs=[{h:'ملخص الفترة',cols:[{t:'البند',w:0},{t:'المبلغ',w:260,n:1}],rows:[
+      ['صافي المبيعات',salesT],['مجمل الربح',gross],['المصاريف',-expT],['صافي الربح',r2(gross-expT)],['المشتريات',r2(sum(buys,'total')-sum(rb,'total'))],
+      ['تحصيلات من العملاء',r2(sum(mv.filter(m=>m.type==='collect'),'amount'))],['سداد للموردين',r2(sum(mv.filter(m=>m.type==='pay'),'amount'))],['المبيعات الآجل',r2(sum(sales,'rest'))]].map(([a,v],k)=>({v:[a,fmt(v)],tone:{1:k===1||k===3?sgnTone(v):k===2&&v?DOC.bad:DOC.ink},bold:k===3}))},
+      {h:'الحركة على كل خزنة',cols:[{t:'الخزنة',w:0},{t:'داخل',w:200,n:1},{t:'خارج',w:200,n:1},{t:'الصافي',w:200,n:1},{t:'الرصيد دلوقتي',w:220,n:1}],
+       rows:WK.map(k=>{const b=box[k];return {v:[W[k],fmt(b.i),fmt(b.o),fmt(b.i-b.o),fmt(S.shop?.[k]||0)],tone:{1:DOC.good,2:DOC.bad,3:sgnTone(b.i-b.o)}}}),
+       totals:[['إجمالي الفلوس في كل الخزن دلوقتي',fmt(sum(WK,k=>S.shop?.[k]||0)),1]]}];
+    if(multi){const dd={};const g=d=>dd[d]||(dd[d]={s:0,p:0,e:0,i:0,o:0});sales.forEach(i=>{g(i.day).s+=i.total;g(i.day).p+=i.profit||0});rs.forEach(i=>{g(i.day).s-=i.total;g(i.day).p+=i.profit||0});exp.forEach(m=>g(m.day).e+=m.amount);
+      all.forEach(x=>flowsOf(x).forEach(z=>{if(z.tr)return;if(z.v>0)g(x.day).i+=z.v;else g(x.day).o-=z.v}));
+      const ks=Object.keys(dd).sort(),months=new Set(ks.map(d=>d.slice(0,7)));
+      if(months.size>1){const mm={};ks.forEach(d=>{const m=d.slice(0,7),o=mm[m]||(mm[m]={s:0,p:0,e:0,i:0,o:0});['s','p','e','i','o'].forEach(q=>o[q]+=dd[d][q])});
+        secs.push({h:'شهر بشهر',cols:[{t:'الشهر',w:0},{t:'المبيعات',w:170,n:1},{t:'الربح',w:150,n:1},{t:'المصاريف',w:150,n:1},{t:'داخل',w:160,n:1},{t:'خارج',w:160,n:1}],
+          rows:Object.entries(mm).map(([m,o])=>({v:[new Date(m+'-15T12:00').toLocaleDateString('ar-EG',{month:'long',year:'numeric'}),fmt(o.s),fmt(o.p),fmt(o.e),fmt(o.i),fmt(o.o)],tone:{2:sgnTone(o.p),4:DOC.good,5:DOC.bad}}))})}
+      secs.push({h:'يوم بيوم',cols:[{t:'اليوم',w:0},{t:'المبيعات',w:170,n:1},{t:'الربح',w:150,n:1},{t:'المصاريف',w:150,n:1},{t:'داخل',w:160,n:1},{t:'خارج',w:160,n:1}],
+        rows:ks.map(d=>{const o=dd[d];return {v:[new Date(d+'T12:00').toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'numeric'}),fmt(o.s),fmt(o.p),fmt(o.e),fmt(o.i),fmt(o.o)],tone:{2:sgnTone(o.p),4:DOC.good,5:DOC.bad}}})})}
+    secs.push({h:'كل الحركات بالتفصيل',cols:[{t:multi?'التاريخ':'الوقت',w:multi?190:140,n:1},{t:'الحركة',w:280},{t:'البيان',w:0},{t:'داخل',w:160,n:1},{t:'خارج',w:160,n:1}],rows,empty:'مفيش حركات في الفترة دي'});
+    secs.at(-1).cols[1].w=280;
+    return {...base,kpis:[['داخل',fmt(tin),DOC.good],['خارج',fmt(tout),DOC.bad],['الصافي',fmt(tin-tout),sgnTone(tin-tout)],['صافي الربح',fmt(gross-expT),sgnTone(gross-expT)]],sections:secs}}
+  if(key==='sales'){const list=[...sales,...rs].sort((a,b)=>a.ts-b.ts);
+    return {...base,kpis:[['صافي المبيعات',fmt(salesT)],['مجمل الربح',fmt(gross),sgnTone(gross)],['عدد الفواتير',String(sales.length)+(rs.length?` + ${rs.length} مرتجع`:'')],['متوسط الفاتورة',fmt(sales.length?sum(sales,'total')/sales.length:0)]],
+      sections:[{h:'فواتير البيع',cols:[{t:'رقم',w:90,n:1},{t:multi?'التاريخ':'الوقت',w:multi?170:130,n:1},{t:'العميل',w:0},{t:'الصافي',w:150,n:1},{t:'المدفوع',w:140,n:1},{t:'آجل',w:130,n:1},{t:'الربح',w:130,n:1}],
+        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest?fmt(sg*i.rest):'',fmt(i.profit||0)],tone:{3:rt?DOC.bad:DOC.ink,5:DOC.bad,6:sgnTone(i.profit||0)}}}),empty:'مفيش مبيعات في الفترة دي'}],
+      totals:[['إجمالي المبيعات قبل الخصم',fmt(sum(sales,'sub'))],['خصومات',fmt(sum(sales,'disc'))],['مرتجعات',fmt(sum(rs,'total')),0,DOC.bad],['صافي المبيعات',fmt(salesT),1],['تكلفة البضاعة',fmt(salesT-gross)],['مجمل الربح',fmt(gross),1,sgnTone(gross)]]}}
+  if(key==='items'){const it={};const add=(l,s)=>{const k=l.pid||l.name,o=it[k]||(it[k]={name:l.name,q:0,rev:0,cost:0});o.q+=s*l.qty;o.rev+=s*l.qty*l.price;o.cost+=s*l.qty*(l.cost||0)};
+    sales.forEach(i=>i.lines.forEach(l=>add(l,1)));rs.forEach(i=>i.lines.forEach(l=>add(l,-1)));const a=Object.values(it).filter(x=>x.q||x.rev).sort((x,y)=>(y.rev-y.cost)-(x.rev-x.cost));
+    const R2=sum(a,'rev'),C2=sum(a,'cost');
+    return {...base,kpis:[['عدد الأصناف',String(a.length)],['القطع المباعة',fmt(sum(a,'q'))],['المبيعات',fmt(R2)],['الربح',fmt(R2-C2),sgnTone(R2-C2)]],
+      sections:[{cols:[{t:'م',w:70,n:1},{t:'الصنف',w:0},{t:'الكمية',w:120,n:1},{t:'المبيعات',w:160,n:1},{t:'التكلفة',w:150,n:1},{t:'الربح',w:140,n:1},{t:'%',w:90,n:1}],
+        rows:a.map((x,k)=>({v:[String(k+1),x.name,fmt(x.q),fmt(x.rev),fmt(x.cost),fmt(x.rev-x.cost),x.rev?Math.round((x.rev-x.cost)/x.rev*100)+'%':''],tone:{5:sgnTone(x.rev-x.cost)}})),empty:'مفيش مبيعات في الفترة دي'}],
+      note:'الأرقام قبل خصم الفاتورة الإجمالي.'}}
+  if(key==='exp'){const bc={};exp.forEach(m=>bc[m.cat||'أخرى']=(bc[m.cat||'أخرى']||0)+m.amount);
+    return {...base,kpis:[['إجمالي المصاريف',fmt(expT),DOC.bad],['عدد المصاريف',String(exp.length)]],
+      sections:[{h:'حسب النوع',cols:[{t:'النوع',w:0},{t:'المبلغ',w:220,n:1},{t:'النسبة',w:140,n:1}],rows:Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({v:[k,fmt(v),expT?Math.round(v/expT*100)+'%':'']})),empty:'مفيش مصاريف'},
+        {h:'بالتفصيل',cols:[{t:multi?'التاريخ':'الوقت',w:multi?190:140,n:1},{t:'النوع',w:200},{t:'البيان',w:0},{t:'من',w:170},{t:'المبلغ',w:160,n:1}],
+         rows:exp.map(m=>({v:[whenTxt(m.ts,multi),m.cat||'أخرى',m.note||'',W[m.method]||'',fmt(m.amount)],tone:{4:DOC.bad}})),empty:'مفيش مصاريف'}],
+      totals:[['إجمالي المصاريف',fmt(expT),1,DOC.bad]]}}
+  if(key==='buy'){const list=[...buys,...rb].sort((a,b)=>a.ts-b.ts),net=r2(sum(buys,'total')-sum(rb,'total'));
+    return {...base,kpis:[['صافي المشتريات',fmt(net)],['عدد الفواتير',String(buys.length)+(rb.length?` + ${rb.length} مرتجع`:'')],['المدفوع',fmt(sum(buys,paidOf)-sum(rb,paidOf))],['آجل للموردين',fmt(sum(buys,'rest')),DOC.bad]],
+      sections:[{cols:[{t:'رقم',w:90,n:1},{t:multi?'التاريخ':'الوقت',w:multi?170:130,n:1},{t:'المورد',w:0},{t:'الإجمالي',w:160,n:1},{t:'المدفوع',w:150,n:1},{t:'آجل',w:140,n:1}],
+        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest?fmt(sg*i.rest):''],tone:{3:rt?DOC.bad:DOC.ink}}}),empty:'مفيش مشتريات في الفترة دي'}],
+      totals:[['المشتريات',fmt(sum(buys,'total'))],['مرتجع مشتريات',fmt(sum(rb,'total'))],['صافي المشتريات',fmt(net),1]]}}
+  if(key==='cp'){const col=mv.filter(m=>m.type==='collect'),pay=mv.filter(m=>m.type==='pay'),cols=[{t:multi?'التاريخ':'الوقت',w:multi?190:140,n:1},{t:'الاسم',w:0},{t:'في',w:180},{t:'ملاحظة',w:260},{t:'المبلغ',w:160,n:1}];
+    const rw=(m,tc)=>({v:[whenTxt(m.ts,multi),m.partyName||'',W[m.method]||'',m.note||'',fmt(m.amount)],tone:{4:tc}});
+    return {...base,kpis:[['تحصيلات من العملاء',fmt(sum(col,'amount')),DOC.good],['سداد للموردين',fmt(sum(pay,'amount')),DOC.bad]],
+      sections:[{h:'تحصيلات من العملاء',cols,rows:col.map(m=>rw(m,DOC.good)),empty:'مفيش تحصيلات',totals:[['إجمالي التحصيلات',fmt(sum(col,'amount')),1,DOC.good]]},
+        {h:'سداد للموردين',cols,rows:pay.map(m=>rw(m,DOC.bad)),empty:'مفيش سداد',totals:[['إجمالي السداد',fmt(sum(pay,'amount')),1,DOC.bad]]}]}}
+  if(key==='cust'||key==='supp'){const c=key==='cust',ps=S.parties.filter(p=>p.type===(c?'c':'s')&&r2(p.bal)),pos=ps.filter(p=>p.bal>0).sort((a,b)=>b.bal-a.bal),neg=ps.filter(p=>p.bal<0).sort((a,b)=>a.bal-b.bal);
+    const cols=[{t:'م',w:70,n:1},{t:c?'العميل':'المورد',w:0},{t:'الموبايل',w:240,n:1},{t:'الرصيد',w:200,n:1}],rw=(p,k,tc)=>({v:[String(k+1),p.name,p.phone||'',fmt(Math.abs(p.bal))],tone:{3:tc}});
+    const P1=r2(sum(pos,'bal')),N1=r2(-sum(neg,'bal'));
+    return {...base,kpis:c?[['ليك عند العملاء',fmt(P1),DOC.bad],['عليك للعملاء',fmt(N1),DOC.good],['عدد العملاء',String(ps.length)]]:[['عليك للموردين',fmt(P1),DOC.bad],['ليك عند الموردين',fmt(N1),DOC.good],['عدد الموردين',String(ps.length)]],
+      sections:[{h:c?'عملاء عليهم فلوس':'موردين ليهم فلوس',cols,rows:pos.map((p,k)=>rw(p,k,DOC.bad)),empty:'مفيش',totals:[['الإجمالي',fmt(P1),1,DOC.bad]]},
+        ...(neg.length?[{h:c?'عملاء ليهم فلوس عندنا':'موردين عليهم فلوس لينا',cols,rows:neg.map((p,k)=>rw(p,k,DOC.good)),totals:[['الإجمالي',fmt(N1),1,DOC.good]]}]:[])]}}
+  if(key==='stock'){const a=S.products.slice().sort((x,y)=>(x.cat||'').localeCompare(y.cat||'','ar')||x.name.localeCompare(y.name,'ar')),low=a.filter(p=>p.qty<=(p.min||0));
+    const val=r2(sum(a,p=>Math.max(0,p.qty)*p.cost)),sv=r2(sum(a,p=>Math.max(0,p.qty)*p.price));
+    return {...base,kpis:[['عدد الأصناف',String(a.length)],['القطع',fmt(sum(a,p=>Math.max(0,p.qty)))],['قيمة البضاعة بالتكلفة',fmt(val)],['بسعر البيع',fmt(sv)]],
+      sections:[{h:'الأصناف',cols:[{t:'م',w:70,n:1},{t:'الصنف',w:0},{t:'الكود',w:160,n:1},{t:'الكمية',w:110,n:1},{t:'التكلفة',w:140,n:1},{t:'القيمة',w:160,n:1}],
+        rows:a.map((p,k)=>({v:[String(k+1),p.name,p.code||'',fmt(p.qty),fmt(p.cost),fmt(Math.max(0,p.qty)*p.cost)],tone:{3:p.qty<=0?DOC.bad:DOC.ink}})),empty:'مفيش أصناف',totals:[['قيمة البضاعة بالتكلفة',fmt(val),1]]},
+        {h:'نواقص (وصلت للحد الأدنى أو خلصت)',cols:[{t:'الصنف',w:0},{t:'الكود',w:180,n:1},{t:'الموجود',w:150,n:1},{t:'الحد الأدنى',w:160,n:1}],rows:low.map(p=>({v:[p.name,p.code||'',fmt(p.qty),fmt(p.min||0)],tone:{2:DOC.bad}})),empty:'مفيش نواقص'}]}}
+  return null}
+function repSheet(key){const [,t,d]=REPS.find(r=>r[0]===key),R=S.repData,per=PERIODIC.has(key);docPrep();
+  if(per&&!R)return toast('استنى التقرير يحمل الأول');
+  openSheet(`<h3>تقرير ${t}</h3><p class="mut" style="margin:0 0 10px">${d}</p>${per?`<div class="note">الفترة: ${R.f===R.t?dayDmy(R.f):`من ${dayDmy(R.f)} إلى ${dayDmy(R.t)}`} (غيّرها من أعلى صفحة التقارير)</div>`:''}${docBtns('rep',key)}`)}
+function repListHtml(){return `<div class="sec"><div class="sec-h"><h2>📄 تقارير للواتساب والطباعة</h2><span class="mut">صورة أو PDF باللوجو</span></div>
+<div class="list">${REPS.map(([k,t,d])=>`<button class="row" data-a="repdoc" data-id="${k}"><div class="main"><div class="t">${t}</div><div class="s">${d}</div></div><span class="tag">${PERIODIC.has(k)?'الفترة':'دلوقتي'}</span></button>`).join('')}</div></div>`}
 function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f"><span>اسم المحل (بيظهر في الفواتير)</span><input id="s_name" value="${esc(S.shop?.name||'')}"></label>
 <div class="sec-h" style="margin-top:6px"><h2>الفاتورة المطبوعة</h2></div>
 <div class="grid2"><label class="f"><span>تليفون المحل</span><input id="s_phone" class="money" value="${esc(S.shop?.phone||'')}"></label><label class="f"><span>العنوان</span><input id="s_addr" value="${esc(S.shop?.addr||'')}"></label></div>
@@ -1425,6 +1524,7 @@ document.addEventListener('click',async e=>{
     case 'printinv':{const i=await getInv(ds.id);if(i)printInvoice(i);break}
     case 'stinv':{const i=await getInv(ds.id);if(i)showInvoice(i.id,i);else toast('مش لاقي الفاتورة');break}
     case 'docshare':docShare(b);break;
+    case 'repdoc':repSheet(ds.id);break;
     case 'docsend':if(S.docLast)docSend(S.docLast);break;
     case 'psize':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'showinv':showInvoice(ds.id);break;
