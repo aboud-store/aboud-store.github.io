@@ -377,12 +377,16 @@ function soft(){if(S.view==='inv'||S.sheetOpen||S.busy)return;render()}
 const KD={sale:{st:-1,w:1,b:1,pt:'c'},buy:{st:1,w:-1,b:1,pt:'s'},rsale:{st:1,w:-1,b:-1,pt:'c'},rbuy:{st:-1,w:1,b:-1,pt:'s'}};
 const KN={sale:'بيع',buy:'شراء',rsale:'مرتجع بيع',rbuy:'مرتجع شراء'};
 const isRet=k=>k==='rsale'||k==='rbuy';
-const lineCost=l=>l.cost!=null?l.cost:(P(l.pid)?.cost||0);
+/* cost of selling q pieces: the pieces on the system go at the average cost; any pieces beyond what's on the system
+   (stock is wrong until the جرد) go at the last purchase price, so profit stays close to the truth */
+function effCost(p,q){if(!p)return 0;q=num(q);const base=p.cost||p.lastCost||0,last=p.lastCost||p.cost||0,av=Math.max(0,num(p.qty));
+  if(!q||q<=av)return base;return r2((av*base+(q-av)*last)/q)}
+const lineCost=(l,k)=>l.cost!=null?l.cost:(k==='sale'?effCost(P(l.pid),l.qty):(P(l.pid)?.cost||0));
 const lineTot=l=>num(l.qty)*num(l.price)-num(l.disc); /* l.disc: discount on the whole line (laptop screen) */
 function calc(d){
   const sub=r2(sum(d.lines,lineTot));const disc=num(d.disc);const total=r2(sub-disc);
   const cash=num(d.cash),insta=num(d.insta),voda=num(d.voda);const rest=r2(total-cash-insta-voda);
-  const cost=r2(sum(d.lines,l=>num(l.qty)*lineCost(l)));
+  const cost=r2(sum(d.lines,l=>num(l.qty)*lineCost(l,d.kind)));
   const profit=d.kind==='sale'?r2(total-cost):d.kind==='rsale'?r2(-(total-cost)):0;
   return{sub,disc,total,cash,insta,voda,rest,cost,profit};
 }
@@ -825,8 +829,8 @@ function lineMeta(l){const p=P(l.pid),k=S.draft.kind;
   if(!p)return maxW;
   if(k==='rbuy')return `الكمية الراجعة للمورد × سعرها${l.max!=null?` · اتشرى منها ${fmt(l.max)}`:''}${num(l.qty)>p.qty?` · <span class="neg">الموجود ${fmt(p.qty)} بس</span>`:''}${maxW}`;
   if(k==='buy')return `الكمية × سعر الشراء · التكلفة الحالية ${fmt(p.cost)}`;
-  const pr=num(l.price)-p.cost,over=num(l.qty)>p.qty;
-  return `الكمية × السعر · ربح القطعة <span class="${pr<0?'neg':'pos'}">${fmt(pr)}</span>${over?` · <span class="neg">الموجود ${fmt(p.qty)} بس</span>`:''}`}
+  const ec=l.cost!=null?l.cost:effCost(p,l.qty),pr=num(l.price)-ec,over=num(l.qty)>p.qty;
+  return `الكمية × السعر · ربح القطعة <span class="${pr<0?'neg':'pos'}">${fmt(pr)}</span>${over?` · <span class="neg">الموجود ${fmt(p.qty)} بس</span> · الزيادة محسوبة بآخر سعر شراء`:''}${!ec?` · <span class="neg">الصنف مالوش تكلفة، اكتبها في كارته</span>`:''}`}
 const PAYL={sale:['اتدفع كاش','إنستاباي','كله آجل','الباقي على العميل','فودافون كاش'],buy:['دفعت كاش','إنستاباي','كله آجل','الباقي للمورد','فودافون كاش'],
   rsale:['رجّعت له كاش','رجّعت إنستاباي','خصم من حسابه','يتخصم من حساب العميل','رجّعت فودافون'],rbuy:['رجّعلك كاش','رجّعلك إنستاباي','خصم من حسابه','يتخصم من حساب المورد','رجّعلك فودافون']};
 function totHtml(){const d=S.draft,c=calc(d),L=PAYL[d.kind],rt=isRet(d.kind);
@@ -873,7 +877,7 @@ async function saveInvoice(next){
   if(c.rest>0.001&&!d.partyId)return fail(rt?`مفيش حساب يتخصم منه ${fmt(c.rest)}. اكتب الفلوس اللي رجعت كاملة، أو اختار ${cust?'العميل':'المورد'}.`:`فيه باقي ${fmt(c.rest)}. اختار ${cust?'العميل':'المورد'} عشان يتسجل على حسابه، أو خلّي الدفع كامل.`);
   const pt=PT(d.partyId);
   const inv={id:uid(),no:(S.shop.seq||0)+1,kind:d.kind,ts:Date.now(),day:today(),partyId:d.partyId||'',partyName:pt?pt.name:(cust?'عميل نقدي':'مورد نقدي'),
-    lines:lines.map(l=>{const q=num(l.qty),ld=num(l.disc);const o={pid:l.pid,name:l.name,qty:q,price:ld?Math.round((num(l.price)-ld/q)*10000)/10000:num(l.price),cost:lineCost(l)};if(ld){o.list=num(l.price);o.ld=ld}if(l.ri!=null)o.ri=l.ri;return o}),
+    lines:lines.map(l=>{const q=num(l.qty),ld=num(l.disc);const o={pid:l.pid,name:l.name,qty:q,price:ld?Math.round((num(l.price)-ld/q)*10000)/10000:num(l.price),cost:lineCost(l,d.kind)};if(ld){o.list=num(l.price);o.ld=ld}if(l.ri!=null)o.ri=l.ri;return o}),
     sub:c.sub,disc:c.disc,total:c.total,cash:c.cash,cashW:d.cashW||'cash',insta:c.insta,instaW:'insta',voda:c.voda,rest:r2(c.rest),profit:c.profit,note:d.note};
   if(d.ref){inv.ref=d.ref;inv.refNo=d.refNo}
   if(d.edit){const old=S.invoices.find(x=>x.id===d.edit);if(!old)return fail('مش لاقي الفاتورة القديمة. اقفل وافتحها تاني.');
