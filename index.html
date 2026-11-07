@@ -222,7 +222,7 @@ body.desk .top{top:50px}
 .dk-ft{display:flex;gap:22px;padding:9px 14px;color:var(--mut);font-size:13px;border-top:1px solid var(--ln)}.dk-ft b{color:var(--fg)}
 .dk .dk-tl{padding:10px 14px 12px}.dk-cats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
 .dk-cats button{border:1px solid var(--ln);background:var(--sf);border-radius:20px;padding:5px 14px;color:var(--mut);font-size:13px}.dk-cats button.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.dk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px;max-height:170px;overflow:auto}
+.dk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px;max-height:260px;overflow:auto;align-content:start}
 .dk-grid button{border:1px solid var(--ln);border-radius:9px;padding:7px 9px;background:var(--sf2);text-align:right;min-width:0}
 .dk-grid .qt{position:relative;min-width:0}.dk-grid .qt>button:first-child{width:100%;height:100%}.dk-grid .pin{position:absolute;top:3px;left:3px;border:0!important;background:none!important;padding:2px 4px!important;font-size:15px;line-height:1;color:var(--mut)}.dk-grid .pin.on{color:#c98a00}.dk-grid .qt>button:first-child b{padding-left:18px}
 .qsg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--mut);margin:0 0 8px}.qsg button{border:1px dashed var(--ac);color:var(--ac);background:var(--ac-soft);border-radius:16px;padding:3px 10px;font-size:12.5px}
@@ -484,6 +484,7 @@ function render(){
   if(!S.shop){app.innerHTML=header('أول مرة')+vWelcome();return}
   app.innerHTML=(S.view==='inv'&&dk)?vEditorDesk():({home:vHome,invoices:vInvoices,stock:vStock,parties:vParties,reports:vReports,inv:vEditor,count:vCount})[S.view]();
   if(S.view==='reports')loadReport();
+  fitTiles();
 }
 
 function vWelcome(){return `<div class="sec card"><h2 style="font-size:20px;margin-bottom:6px">نبدأ دفاتر المحل</h2>
@@ -751,7 +752,10 @@ ${sg.length?`<div class="qsg"><span>💡 بيتباعوا كتير ومش في �
 /* mobile: a row of quick chips under the search */
 function quickChips(){const d=S.draft;if(!d||d.ref)return '';const qi=quickIds();
   return `<div class="qchips">${qi.map(id=>{const p=P(id);return `<button data-a="qpick" data-id="${id}">${esc(p.name)}</button>`}).join('')}<button class="ed" data-a="quickedit">${qi.length?'⚙ تظبيط':'★ ضيف أصناف للإدخال السريع'}</button></div>`}
-function refreshQuick(){const t=$('#d_tiles');if(t)t.innerHTML=tilesHtml();const c=$('.qchips');if(c)c.outerHTML=quickChips()}
+function refreshQuick(){const t=$('#d_tiles');if(t)t.innerHTML=tilesHtml();const c=$('.qchips');if(c)c.outerHTML=quickChips();fitTiles()}
+/* desktop: stretch the quick-entry list down to the bottom of the screen (above the status bar) */
+function fitTiles(){const g=document.querySelector('#d_tiles .dk-grid');if(!g)return;const top=g.getBoundingClientRect().top+scrollY;g.style.maxHeight=Math.max(260,innerHeight-top-56)+'px'}
+window.addEventListener('resize',()=>fitTiles());
 /* sheet to pick quick items: browse every product (filter by category / suggested / chosen / search) and tap to pick */
 function quickSheet(){S.qeq='';S.qcat='all';
   const cats=[...new Set(S.products.map(p=>p.cat).filter(Boolean))],ch=(k,l)=>`<button class="${S.qcat===k?'on':''}" data-a="qcat" data-k="${esc(k)}">${l}</button>`;
@@ -1552,7 +1556,7 @@ document.addEventListener('click',async e=>{
     case 'payall':{const c=calc(S.draft);['cash','insta','voda'].forEach(k=>{S.draft[k]=ds.k===k?String(c.total):'';const e=$('#d_'+k);if(e)e.value=S.draft[k]?fmt(c.total):''});refreshTotals();break}
     case 'saveinv':saveInvoice(ds.k==='new'||ds.k==='new0'?true:ds.k==='print'?'print':false);break;
     case 'nav':navTo(ds);break;
-    case 'dcat':S.dcat=ds.k;$('#d_tiles').innerHTML=tilesHtml();break;
+    case 'dcat':S.dcat=ds.k;$('#d_tiles').innerHTML=tilesHtml();fitTiles();break;
     case 'quickedit':quickSheet();break;
     case 'qpin':{await toggleQuick(ds.id);if($('#qe_res'))qsList();refreshQuick();break}
     case 'qcat':S.qcat=ds.k;document.querySelectorAll('#qe_cats button').forEach(x=>x.classList.toggle('on',x===b));qsList();break;
