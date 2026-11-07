@@ -718,7 +718,7 @@ const isQuick=id=>(S.shop?.quick||[]).includes(id);
 /* suggestions: best sellers not pinned yet */
 function quickSugg(n){const q=new Set(quickIds()),m=soldMap();return topSold().filter(p=>!q.has(p.id)&&m[p.id]>0).slice(0,n)}
 async function toggleQuick(id){const q=[...(S.shop.quick||[])],i=q.indexOf(id);if(i>=0)q.splice(i,1);else q.push(id);await put('shop',{...S.shop,quick:q})}
-function tileBtn(p,cust){const pin=isQuick(p.id);return `<div class="qt"><button data-a="addline" data-id="${p.id}" title="${esc(p.name)}"><b>${esc(p.name)}</b><span>${fmt(cust?defPrice(p):(p.lastCost||p.cost))} · متاح ${fmt(p.qty)}</span></button><button class="pin ${pin?'on':''}" data-a="qpin" data-id="${p.id}" title="${pin?'شيله من الإدخال السريع':'ضيفه للإدخال السريع'}" aria-label="إدخال سريع">${pin?'★':'☆'}</button></div>`}
+function tileBtn(p,cust){const pin=isQuick(p.id);return `<div class="qt"><button data-a="qpick" data-id="${p.id}" title="${esc(p.name)}"><b>${esc(p.name)}</b><span>${fmt(cust?defPrice(p):(p.lastCost||p.cost))} · متاح ${fmt(p.qty)}</span></button><button class="pin ${pin?'on':''}" data-a="qpin" data-id="${p.id}" title="${pin?'شيله من الإدخال السريع':'ضيفه للإدخال السريع'}" aria-label="إدخال سريع">${pin?'★':'☆'}</button></div>`}
 function tilesHtml(){const d=S.draft,qi=quickIds(),c=S.dcat||'quick',cats=[...new Set(S.products.map(p=>p.cat).filter(Boolean))],cust=KD[d.kind].pt==='c';
   let a=c==='quick'?qi.map(P):c==='top'?topSold():c==='all'?S.products:S.products.filter(p=>p.cat===c);a=a.slice(0,c==='quick'?200:60);
   const sg=c==='quick'&&d.kind==='sale'?quickSugg(qi.length?4:8):[];
@@ -727,7 +727,7 @@ ${sg.length?`<div class="qsg"><span>💡 بيتباعوا كتير ومش في �
 <div class="dk-grid">${a.length?a.map(p=>tileBtn(p,cust)).join(''):`<span class="mut" style="grid-column:1/-1">${c==='quick'?'لسه ما ضفتش أصناف للإدخال السريع. دوس ☆ على أي صنف، أو «تظبيط الإدخال السريع».':'مفيش أصناف هنا.'}</span>`}</div>`}
 /* mobile: a row of quick chips under the search */
 function quickChips(){const d=S.draft;if(!d||d.ref)return '';const qi=quickIds();
-  return `<div class="qchips">${qi.map(id=>{const p=P(id);return `<button data-a="addline" data-id="${id}">${esc(p.name)}</button>`}).join('')}<button class="ed" data-a="quickedit">${qi.length?'⚙ تظبيط':'★ ضيف أصناف للإدخال السريع'}</button></div>`}
+  return `<div class="qchips">${qi.map(id=>{const p=P(id);return `<button data-a="qpick" data-id="${id}">${esc(p.name)}</button>`}).join('')}<button class="ed" data-a="quickedit">${qi.length?'⚙ تظبيط':'★ ضيف أصناف للإدخال السريع'}</button></div>`}
 function refreshQuick(){const t=$('#d_tiles');if(t)t.innerHTML=tilesHtml();const c=$('.qchips');if(c)c.outerHTML=quickChips()}
 /* sheet to pick quick items: browse every product (filter by category / suggested / chosen / search) and tap to pick */
 function quickSheet(){S.qeq='';S.qcat='all';
@@ -852,7 +852,7 @@ function qeInfo(){const d=S.draft,p=d&&d.sel&&P(d.sel);if(!p)return 'اكتب ا
   return `${esc(p.name)} · المتاح <b class="${p.qty<=0?'neg':''}">${fmt(p.qty)}</b> · ${KD[d.kind].pt==='c'?`قطاعي ${fmt(p.price)}${p.price2?' · جملة '+fmt(p.price2):''}`:`آخر تكلفة ${fmt(p.lastCost||p.cost)}`}`}
 function qPick(id){const p=P(id),d=S.draft;if(!p)return;d.sel=id;d.q=p.name;d.ep=String(defPrice(p));if(!num(d.eq))d.eq='1';
   const q=$('#d_q');if(q)q.value=p.name;$('#d_res').hidden=true;$('#d_ep').value=fmt(d.ep);$('#d_eq').value=d.eq;$('#d_qi').innerHTML=qeInfo();
-  const e=$('#d_eq');e.focus();e.select()}
+  const e=$('#d_eq');e.scrollIntoView({block:'center'});e.focus();e.select()}
 function qeAdd(){const d=S.draft;
   if(!d.sel){const q=($('#d_q')?.value||'').trim().toLowerCase();const p=q&&S.products.find(x=>(x.code||'').toLowerCase()===q);if(p){qPick(p.id);return}toast('اختار الصنف الأول');$('#d_q')?.focus();return}
   const p=P(d.sel),qty=num($('#d_eq').value),price=num($('#d_ep').value);if(!p)return;
