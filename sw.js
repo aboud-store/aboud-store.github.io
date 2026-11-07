@@ -1,5 +1,5 @@
 // Aboud Store — offline support
-var CACHE = "aboud-store-v26";
+var CACHE = "aboud-store-v27";
 var CORE = [
   "./", "./index.html", "./manifest.json", "./icon-180.png", "./icon-192.png", "./icon-512.png",
   "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
@@ -28,11 +28,16 @@ self.addEventListener("fetch", function (e) {
   if (!mine && !lib && !font) return; // Firestore/Auth traffic goes straight to the network
   if (mine) {
     // app files: newest from the network, cached copy when offline
-    e.respondWith(fetch(e.request, { cache: "no-cache" }).then(function (r) {
+    // app files: newest from the network; no internet or a weak signal (over 3s) -> the copy saved on the device
+    var cached = function () { return caches.match(e.request).then(function (m) { return m || caches.match("./index.html"); }); };
+    var net = fetch(e.request, { cache: "no-cache" }).then(function (r) {
       if (r.ok) { var c = r.clone(); caches.open(CACHE).then(function (x) { x.put(e.request, c); }); }
       return r;
-    }).catch(function () {
-      return caches.match(e.request).then(function (m) { return m || caches.match("./index.html"); });
+    });
+    e.respondWith(new Promise(function (ok) {
+      var done = false, fin = function (r) { if (!done && r) { done = true; ok(r); } };
+      var t = setTimeout(function () { cached().then(fin); }, 3000);
+      net.then(function (r) { clearTimeout(t); fin(r); }).catch(function () { clearTimeout(t); cached().then(function (m) { fin(m || Response.error()); }); });
     }));
   } else {
     // libraries and fonts never change at a pinned URL: cache first

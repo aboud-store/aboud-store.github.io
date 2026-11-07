@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@400;600;700&display=swap">
 <style>
 /* Layout: one-column phone app, steel-ink cash card cut like a key blade, brass accent, bottom tab bar */
+.net{position:fixed;z-index:60;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));background:#B4532A;color:#fff;font-size:13px;font-weight:600;padding:7px 14px;border-radius:99px;box-shadow:0 4px 14px #0004;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis}.net.sync{background:#2F6F8F}
 :root{
   --bg:#EDEFEB;--sf:#FFFFFF;--sf2:#F5F6F3;--ln:#DADFD8;--fg:#172027;--mut:#5C686E;
   --ac:#A06C16;--ac-fg:#FFFFFF;--ac-soft:#F4E9D4;
@@ -275,7 +276,7 @@ body.desk .top{top:50px}
 </head>
 <body>
 
-<div class="app" id="app"><div class="empty" style="margin-top:40vh"><b>بيفتح الحسابات…</b></div></div>
+<div class="net" id="net" hidden></div><div class="app" id="app"><div class="empty" style="margin-top:40vh"><b>بيفتح الحسابات…</b></div></div>
 <nav class="tabs" id="tabs" hidden><div class="in">
   <button data-a="go" data-v="home"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 11l8-7 8 7v9H4z"/><path d="M10 20v-6h4v6"/></svg>الرئيسية</button>
   <button data-a="go" data-v="invoices"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>الفواتير</button>
@@ -327,17 +328,31 @@ function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify({shop:S.shop,p
 function loadLocal(){try{return JSON.parse(localStorage.getItem(LKEY))}catch(e){return null}}
 async function put(col,obj){
   if(col==='shop')S.shop=obj;else{const a=S[col],i=a.findIndex(x=>x.id===obj.id);if(i>=0)a[i]=obj;else a.unshift(obj)}
-  if(S.mode==='cloud'){(col==='shop'?base.set(obj):C(col).doc(obj.id).set(obj)).catch(wfail)}else saveLocal();
+  if(S.mode==='cloud'){(col==='shop'?base.set(obj):C(col).doc(obj.id).set(obj)).catch(wfail);pend()}else saveLocal();
 }
 async function del(col,id){
   S[col]=S[col].filter(x=>x.id!==id);
-  if(S.mode==='cloud')C(col).doc(id).delete().catch(wfail);else saveLocal();
+  if(S.mode==='cloud'){C(col).doc(id).delete().catch(wfail);pend()}else saveLocal();
 }
 async function fetchWhere(col,field,op,val,field2,op2,val2){
   if(S.mode!=='cloud'){const t=(x,f,o,v)=>o==='=='?x[f]===v:o==='>='?x[f]>=v:x[f]<=v;return vis(S[col].filter(x=>t(x,field,op,val)&&(!field2||t(x,field2,op2,val2))))}
   let q=C(col).where(field,op,val);if(field2)q=q.where(field2,op2,val2);
-  const s=await q.limit(1000).get();const r=s.docs.map(d=>({...d.data()}));return col==='invoices'||col==='moves'?vis(r):r;
+  const s=await getQ(q.limit(1000));const r=s.docs.map(d=>({...d.data()}));return col==='invoices'||col==='moves'?vis(r):r;
 }
+/* offline: reads come from the copy saved on the device; online but slow (weak signal): wait 4s then use the device copy */
+async function getQ(q){
+  if(!navigator.onLine)return q.get({source:'cache'}).catch(()=>q.get());
+  let to;const slow=new Promise(r=>{to=setTimeout(()=>r(q.get({source:'cache'}).catch(()=>q.get())),4000)});
+  try{return await Promise.race([q.get(),slow])}finally{clearTimeout(to)}
+}
+/* online / offline banner + upload of what was recorded without internet */
+let pendN=0;
+function pend(){if(!FS)return;const n=++pendN;S.pending=true;netUI();FS.waitForPendingWrites().then(()=>{if(n!==pendN)return;const was=S.wasOff;S.pending=false;S.wasOff=false;netUI();if(was)toast('اترفع كل اللي اتسجل وانت من غير نت ✓')}).catch(()=>{})}
+function netUI(){const e=document.getElementById('net');if(!e)return;const off=!navigator.onLine;if(off)S.wasOff=true;
+  if(off){e.className='net';e.textContent='شغال من غير نت · كل حاجة بتتحفظ على الجهاز';e.hidden=false}
+  else if(S.pending&&S.wasOff){e.className='net sync';e.textContent='النت رجع · بيرفع اللي اتسجل…';e.hidden=false}
+  else e.hidden=true}
+addEventListener('online',()=>{netUI();if(S.pending)pend()});addEventListener('offline',netUI);
 function sortAll(){S.products.sort((a,b)=>a.name.localeCompare(b.name,'ar'));S.parties.sort((a,b)=>a.name.localeCompare(b.name,'ar'));S.invoices.sort((a,b)=>b.ts-a.ts);S.moves.sort((a,b)=>b.ts-a.ts)}
 const P=id=>S.products.find(x=>x.id===id);
 const PT=id=>S.parties.find(x=>x.id===id);
@@ -418,7 +433,7 @@ async function applyInvoice(inv,sign){
 async function getInv(id){
   const loc=S.invoices.find(x=>x.id===id);if(loc)return loc;
   if(S.mode!=='cloud')return null;
-  const s=await C('invoices').doc(id).get();return s.exists?{...s.data()}:null;
+  const s=await getQ(C('invoices').doc(id));return s.exists?{...s.data()}:null;
 }
 /* how much of each line of an original invoice can still be returned */
 const remaining=(orig,i)=>r2(orig.lines[i].qty-((orig.ret||{})[i]||0));
@@ -1634,7 +1649,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('focusout',e=>{if(e.target.id==='d_pq')setTimeout(()=>{const r=$('#d_pres');if(r&&document.activeElement?.id!=='d_pq')r.hidden=true;const d=S.draft,pt=d&&PT(d.partyId),q=$('#d_pq');if(q&&d&&!d.pq)q.value=pt?pt.name:''},150);const t=e.target;if(t.classList?.contains('money')&&t.inputMode==='decimal'&&t.value.trim()!==''){t.value=fmt(num(t.value))}});
 try{S.noInst=localStorage.getItem('as-noinst')==='1'}catch(_){}
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+netUI();if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* auto-update: when the app comes back to the screen, check for a newer version and reload (unless an invoice or form is open) */
 const APPV='15';let updWait=false;
 async function checkUpdate(){try{const t=await (await fetch('index.html?v='+Date.now(),{cache:'no-store'})).text();const m=t.match(/const APPV='(\d+)'/);
