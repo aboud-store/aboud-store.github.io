@@ -316,6 +316,11 @@ const defCW=k=>k==='buy'?'cash':'drawer'; /* which box the cash of an invoice go
 const S={view:'home',mode:'loading',loaded:false,shop:null,products:[],parties:[],invoices:[],moves:[],
   ptab:'c',itab:'sale',iq:'',sq:'',scat:'',pq:'',rng:'month',from:'',to:'',draft:null,busy:false,sheetOpen:false};
 let base=null;const LKEY='aboud-store-books-v1';
+/* بداية الحسابات: invoices and moves older than this are hidden everywhere (reports, lists, statements) — never deleted.
+   Default = the moment he asked to start fresh (7 Nov 2026, 1:27 PM Cairo). 0 in the settings = show everything again. */
+const START0=Date.UTC(2026,10,7,11,27);
+const startTs=()=>S.shop&&S.shop.startTs!=null?+S.shop.startTs:START0;
+const vis=a=>{const t=startTs();return t?a.filter(x=>(+x.ts||0)>=t):a};
 
 /* ---------- storage ---------- */
 function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify({shop:S.shop,products:S.products,parties:S.parties,invoices:S.invoices,moves:S.moves}))}catch(e){}}
@@ -329,9 +334,9 @@ async function del(col,id){
   if(S.mode==='cloud')C(col).doc(id).delete().catch(wfail);else saveLocal();
 }
 async function fetchWhere(col,field,op,val,field2,op2,val2){
-  if(S.mode!=='cloud'){const t=(x,f,o,v)=>o==='=='?x[f]===v:o==='>='?x[f]>=v:x[f]<=v;return S[col].filter(x=>t(x,field,op,val)&&(!field2||t(x,field2,op2,val2)))}
+  if(S.mode!=='cloud'){const t=(x,f,o,v)=>o==='=='?x[f]===v:o==='>='?x[f]>=v:x[f]<=v;return vis(S[col].filter(x=>t(x,field,op,val)&&(!field2||t(x,field2,op2,val2))))}
   let q=C(col).where(field,op,val);if(field2)q=q.where(field2,op2,val2);
-  const s=await q.limit(1000).get();return s.docs.map(d=>({...d.data()}));
+  const s=await q.limit(1000).get();const r=s.docs.map(d=>({...d.data()}));return col==='invoices'||col==='moves'?vis(r):r;
 }
 function sortAll(){S.products.sort((a,b)=>a.name.localeCompare(b.name,'ar'));S.parties.sort((a,b)=>a.name.localeCompare(b.name,'ar'));S.invoices.sort((a,b)=>b.ts-a.ts);S.moves.sort((a,b)=>b.ts-a.ts)}
 const P=id=>S.products.find(x=>x.id===id);
@@ -364,11 +369,13 @@ function subscribe(){
   const got=new Set(),need=5;let timer=setTimeout(()=>{if(!S.loaded){S.slow=true;render()}},10000);
   const mark=k=>{got.add(k);if(!S.loaded&&got.size>=need){S.loaded=true;clearTimeout(timer);render()}else if(S.loaded)soft()};
   const fail=e=>{console.error(e);S.err=e&&e.code==='permission-denied'?'حسابك مش مسموحله يقرا بيانات المحل من السيرفر (صلاحيات Firebase). ابعتلي الرسالة دي وأنا أظبطها.':'مش قادر أوصل للبيانات دلوقتي. اقفل البرنامج وافتحه تاني بعد شوية.';S.loaded=true;render()};
-  base.onSnapshot(s=>{S.shop=s.exists?{...s.data()}:null;mark('shop')},fail);
+  let subIM=false; /* invoices & moves wait for the shop doc, so the start point (startTs) is known before filtering */
+  base.onSnapshot(s=>{S.shop=s.exists?{...s.data()}:null;mark('shop');if(!subIM){subIM=true;subIMgo()}},fail);
+  function subIMgo(){
   C('products').limit(1000).onSnapshot(s=>{S.products=s.docs.map(d=>({...d.data()}));sortAll();mark('p')},fail);
   C('parties').limit(1000).onSnapshot(s=>{S.parties=s.docs.map(d=>({...d.data()}));sortAll();mark('c')},fail);
-  C('invoices').orderBy('ts','desc').limit(300).onSnapshot(s=>{S.invoices=s.docs.map(d=>({...d.data()}));mark('i')},fail);
-  C('moves').orderBy('ts','desc').limit(300).onSnapshot(s=>{S.moves=s.docs.map(d=>({...d.data()}));mark('m')},fail);
+  C('invoices').orderBy('ts','desc').limit(300).onSnapshot(s=>{S.invoices=vis(s.docs.map(d=>({...d.data()})));mark('i')},fail);
+  C('moves').orderBy('ts','desc').limit(300).onSnapshot(s=>{S.moves=vis(s.docs.map(d=>({...d.data()})));mark('m')},fail);}
 }
 function soft(){if(S.view==='inv'||S.sheetOpen||S.busy)return;render()}
 
@@ -1367,6 +1374,9 @@ function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f">
 <label class="f"><span>جملة آخر الفاتورة</span><input id="s_foot" value="${esc(S.shop?.foot||'')}" placeholder="شكراً لتعاملكم معنا"></label>
 <label class="f"><span>مقاس الطباعة</span><div class="seg" id="s_ps"><button class="${S.shop?.printSize!=='80'?'on':''}" data-a="psize" data-k="a4">ورقة A4</button><button class="${S.shop?.printSize==='80'?'on':''}" data-a="psize" data-k="80">إيصال 80مم (طابعة كاشير)</button></div></label>
 <button class="primary" data-a="savesettings" data-save>حفظ</button>
+<div class="sec-h" style="margin-top:16px"><h2>بداية الحسابات</h2></div>
+<div class="note" style="margin:0 0 8px">${startTs()?`الحسابات شغالة من ${new Date(startTs()).toLocaleString('ar-EG',{day:'numeric',month:'long',year:'numeric',hour:'numeric',minute:'2-digit'})}. الفواتير والحركات اللي قبل كده مستخبية بس، مش ممسوحة.`:'كل الفواتير والحركات ظاهرة من أول يوم.'}</div>
+<div class="grid2"><button class="ghost" data-a="startnow">ابدأ من دلوقتي</button>${startTs()?'<button class="ghost" data-a="startall">رجّع القديم يظهر</button>':''}</div>
 <div class="note">داخل بـ ${esc(AU?.email||'')}. الحسابات بتتحفظ على السيرفر وتفتحها من أي موبايل أو لاب بنفس الإيميل. لو النت فصل، كمّل شغل عادي وهتترفع أول ما النت يرجع.</div>
 ${isApp()?'':'<button class="ghost" style="width:100%;margin-top:12px" data-a="install">نزّل البرنامج على الجهاز ده</button>'}
 <button class="danger" data-a="logout">تسجيل خروج</button>`)}
@@ -1559,6 +1569,8 @@ document.addEventListener('click',async e=>{
     case 'iw':S.draft.instaW=ds.k;b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'cw':S.draft.cashW=ds.k;b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'settings':settingsSheet();break;
+    case 'startnow':confirmSheet('التقارير والفواتير هتبدأ من الصفر من دلوقتي. القديم بيستخبى بس ومش بيتمسح، وتقدر ترجّعه من الإعدادات.',async()=>{await put('shop',{...S.shop,startTs:Date.now()});closeSheet();location.reload()},'أيوه، ابدأ من دلوقتي');break;
+    case 'startall':await guard(()=>put('shop',{...S.shop,startTs:0}));closeSheet();location.reload();break;
     case 'install':if(e.target.closest('.x'))break;installSheet();break;
     case 'noinst':S.noInst=true;try{localStorage.setItem('as-noinst','1')}catch(_){}render();break;
     case 'logout':confirmSheet('هتخرج من الحساب على الجهاز ده. البيانات محفوظة على السيرفر.',async()=>{await firebase.auth().signOut()},'خروج');break;
