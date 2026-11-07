@@ -304,7 +304,10 @@ const sum=(a,k)=>a.reduce((s,x)=>s+(+(typeof k==='function'?k(x):x[k])||0),0);
 const tm=ts=>{const d=new Date(ts);return d.toLocaleTimeString('ar-EG',{hour:'numeric',minute:'2-digit'})};
 const dshort=day=>{const [y,m,d]=day.split('-');return `${+d}/${+m}`};
 const EXP_CATS=['إيجار','كهرباء ومياه','مرتبات','نقل وشحن','أكل ومشروبات','صيانة','مستلزمات المحل','أخرى'];
-const MOVE={expense:'مصروف',collect:'تحصيل من عميل',pay:'سداد لمورد',in:'إيداع في الخزنة',out:'سحب من الخزنة',transfer:'تحويل بين الخزن',adj:'تسوية رصيد الخزنة',padj:'ضبط رصيد حساب',close:'تقفيل ← الخزنة'};
+/* loans: lend = money out to someone (on him), lret = he paid it back; borrow = we took money from someone, bret = we paid him back */
+const LOANS=['lend','lret','borrow','bret'];
+const mvEff=m=>m.type==='padj'?m.amount:({lend:1,bret:1,lret:-1,borrow:-1,collect:-1,pay:-1}[m.type]||0)*m.amount; /* effect on the person's balance (+ = on him) */
+const MOVE={lend:'سلفة طالعة',lret:'رد سلفة (رجعلنا)',borrow:'سلفة داخلة (اتسلفنا)',bret:'رد سلفة (رجّعنا)',expense:'مصروف',collect:'تحصيل من عميل',pay:'سداد لمورد',in:'إيداع في الخزنة',out:'سحب من الخزنة',transfer:'تحويل بين الخزن',adj:'تسوية رصيد الخزنة',padj:'ضبط رصيد حساب',close:'تقفيل ← الخزنة'};
 /* three money boxes: the counter drawer (درج النقدية) takes the day's cash sales; closing it moves the money to the main cash (كاش) */
 const W={drawer:'درج النقدية',cash:'الخزنة',insta:'إنستاباي',voda:'فودافون كاش'},WK=['drawer','cash','insta','voda'];
 const EW=['insta','voda']; /* electronic wallets. An invoice can be split: cash (drawer/cash) + insta + voda. Old invoices: «insta» amount went to inv.instaW */
@@ -446,10 +449,10 @@ async function applyMove(m,sign){
   if(m.type==='padj'){const pt=PT(m.partyId);if(pt)await put('parties',{...pt,bal:r2(pt.bal+sign*m.amount)});return} /* account balance set by hand (count / opening) — no cash */
   const sh={...S.shop},k=W[m.method]?m.method:'cash';
   if(m.type==='transfer'||m.type==='close'){const o=mvTo(m);sh[k]=r2((sh[k]||0)-sign*m.amount);sh[o]=r2((sh[o]||0)+sign*m.amount)}
-  else{const dl={collect:1,in:1,adj:1,expense:-1,pay:-1,out:-1}[m.type];sh[k]=r2((sh[k]||0)+sign*dl*m.amount)}
+  else{const dl={collect:1,in:1,adj:1,lret:1,borrow:1,expense:-1,pay:-1,out:-1,lend:-1,bret:-1}[m.type]||0;sh[k]=r2((sh[k]||0)+sign*dl*m.amount)}
   await put('shop',sh);
   const pt=m.partyId&&PT(m.partyId);
-  if(pt&&(m.type==='collect'||m.type==='pay'))await put('parties',{...pt,bal:r2(pt.bal-sign*m.amount)});
+  if(pt&&(m.type==='collect'||m.type==='pay'||LOANS.includes(m.type)))await put('parties',{...pt,bal:r2(pt.bal+sign*mvEff(m))});
 }
 async function guard(fn){
   if(S.busy)return;S.busy=true;document.querySelectorAll('[data-save]').forEach(b=>b.disabled=true);
@@ -508,7 +511,7 @@ function vHome(){
 <button class="cash" data-a="safe"><div class="lbl">كل الفلوس</div>
 <div class="big">${fmt(sum(WK,k=>sh[k]||0))}<span>جنيه</span></div>
 <div class="split" style="grid-template-columns:repeat(4,1fr)">${WK.map(k=>`<div><span class="lbl">${W[k]}</span><b>${fmt(sh[k])}</b></div>`).join('')}</div></button>
-<button class="ghost" style="width:100%;margin-top:8px" data-a="closedrawer">تقفيل اليوم ← الخزنة</button>
+<div class="grid2" style="margin-top:8px"><button class="ghost" data-a="closedrawer">تقفيل اليوم ← الخزنة</button><button class="ghost" data-a="go" data-v="parties" data-p="l">السلف${(()=>{const v=sum(S.parties.filter(p=>p.type==='l'&&p.bal>0),'bal');return v?` · ${fmt(v)}`:''})()}</button></div>
 ${!isApp()&&!S.noInst?`<div class="inst" role="button" tabindex="0" data-a="install"><img src="icon-192.png" alt="" style="width:36px;height:36px;border-radius:9px"><span><b>نزّل البرنامج على جهازك</b><br><span class="mini">يفتح من الشاشة الرئيسية ويشتغل من غير نت</span></span><button class="x" data-a="noinst" aria-label="إخفاء">×</button></div>`:''}
 <div class="stats">
 <div class="stat"><span class="lbl">مبيعات النهارده</span><b>${fmt(sum(ts,'total')-sum(tr,'total'))}</b><span class="mini">${ts.length} فاتورة${tr.length?` · مرتجع ${fmt(sum(tr,'total'))}`:''}</span></div>
@@ -532,7 +535,7 @@ ${low.length?`<div class="sec"><div class="sec-h"><h2>أصناف قربت تخل
 function invRow(i){const rt=isRet(i.kind);
  const sub=rt?(i.rest>0?` · اتخصم من الحساب ${fmt(i.rest)}`:'')+(i.refNo?` · من فاتورة #${i.refNo}`:''):(i.rest>0?` · باقي ${fmt(i.rest)} آجل`:'')+(i.ret&&Object.values(i.ret).some(v=>v>0)?' · عليها مرتجع':'');
  return `<button class="row" data-a="showinv" data-id="${i.id}"><div class="main"><div class="t"><span class="tag ${rt?'ret':i.kind}">${KN[i.kind]} #${i.no}</span> ${esc(i.partyName)}</div><div class="s">${dshort(i.day)} · ${tm(i.ts)} · ${i.lines.length} صنف${sub}</div></div><div class="amt ${rt?'neg':''}">${rt?'−':''}${fmt(i.total)}${i.kind==='sale'||i.kind==='rsale'?`<small>ربح ${fmt(i.profit)}</small>`:''}</div></button>`}
-function moveRow(m){const plus=['collect','in'].includes(m.type)||(m.type==='adj'&&m.amount>0);const nm=m.type==='transfer'?'تحويل':MOVE[m.type];
+function moveRow(m){const plus=['collect','in','lret','borrow'].includes(m.type)||(m.type==='adj'&&m.amount>0);const nm=m.type==='transfer'?'تحويل':MOVE[m.type];
  return `<button class="row" data-a="showmove" data-id="${m.id}"><div class="main"><div class="t">${esc(nm)}${m.partyName?' · '+esc(m.partyName):''}${m.cat?' · '+esc(m.cat):''}</div><div class="s">${dshort(m.day)} · ${tm(m.ts)} · ${m.type==='transfer'||m.type==='close'?`من ${W[m.method]} لـ ${W[mvTo(m)]}`:W[m.method]}${m.note?' · '+esc(m.note):''}</div></div><div class="amt ${m.type==='transfer'||m.type==='close'?'':plus?'pos':'neg'}">${m.type==='transfer'||m.type==='close'?'':plus?'+':'−'}${fmt(Math.abs(m.amount))}</div></button>`}
 function prodRow(p){const low=p.qty<=(p.min||0);return `<button class="row" data-a="product" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.code?esc(p.code)+' · ':''}تكلفة ${fmt(p.cost)} · بيع ${fmt(p.price)}${p.price2?' · جملة '+fmt(p.price2):''}</div></div><span class="qty ${low?'low':''}">${fmt(p.qty)}</span></button>`}
 
@@ -565,14 +568,16 @@ function vParties(){
   const t=S.ptab,q=S.pq.trim();let a=S.parties.filter(p=>p.type===t);
   if(q)a=a.filter(p=>p.name.includes(q)||(p.phone||'').includes(q));
   a=[...a].sort((x,y)=>y.bal-x.bal);
-  const tot=sum(S.parties.filter(p=>p.type===t&&p.bal>0),'bal');
-  return header('حسابات العملاء والموردين')+`<div class="seg"><button class="${t==='c'?'on':''}" data-a="ptab" data-k="c">العملاء</button><button class="${t==='s'?'on':''}" data-a="ptab" data-k="s">الموردين</button></div>
-<div class="stat" style="margin-top:12px"><span class="lbl">${t==='c'?'إجمالي الفلوس اللي عند العملاء':'إجمالي اللي علينا للموردين'}</span><b>${fmt(tot)}</b></div>
-<div class="search"><input id="pq" placeholder="ابحث بالاسم أو الموبايل" value="${esc(S.pq)}"><button class="addbtn" data-a="party">+ ${t==='c'?'عميل':'مورد'}</button></div>
-<button class="ghost" style="width:100%;margin:-4px 0 12px" data-a="pimport">⇪ استيراد ${t==='c'?'العملاء':'الموردين'} بأرصدتهم من Excel</button>
-<div class="list" id="plist">${a.length?a.map(partyRow).join(''):`<div class="empty"><b>مفيش ${t==='c'?'عملاء':'موردين'}</b>ضيفهم بأرصدتهم القديمة عشان الحسابات تبدأ مظبوطة.</div>`}</div>`;
+  const tot=sum(S.parties.filter(p=>p.type===t&&p.bal>0),'bal'),L=t==='l',lneg=-sum(S.parties.filter(p=>p.type==='l'&&p.bal<0),'bal');
+  return header('حسابات العملاء والموردين')+`<div class="seg"><button class="${t==='c'?'on':''}" data-a="ptab" data-k="c">العملاء</button><button class="${t==='s'?'on':''}" data-a="ptab" data-k="s">الموردين</button><button class="${L?'on':''}" data-a="ptab" data-k="l">السلف</button></div>
+${L?`<div class="stats" style="margin-top:12px"><div class="stat"><span class="lbl">سلف لينا عند الناس</span><b class="neg">${fmt(tot)}</b></div><div class="stat"><span class="lbl">سلف علينا للناس</span><b class="warn">${fmt(lneg)}</b></div></div>
+<div class="grid2" style="margin-bottom:12px"><button class="primary" data-a="move" data-t="lend">💸 سلفة طالعة</button><button class="ghost" data-a="move" data-t="lret">↩ رد سلفة</button></div>`
+:`<div class="stat" style="margin-top:12px"><span class="lbl">${t==='c'?'إجمالي الفلوس اللي عند العملاء':'إجمالي اللي علينا للموردين'}</span><b>${fmt(tot)}</b></div>`}
+<div class="search"><input id="pq" placeholder="ابحث بالاسم أو الموبايل" value="${esc(S.pq)}"><button class="addbtn" data-a="party">+ ${t==='c'?'عميل':L?'شخص':'مورد'}</button></div>
+${L?'':`<button class="ghost" style="width:100%;margin:-4px 0 12px" data-a="pimport">⇪ استيراد ${t==='c'?'العملاء':'الموردين'} بأرصدتهم من Excel</button>`}
+<div class="list" id="plist">${a.length?a.map(partyRow).join(''):L?`<div class="empty"><b>مفيش سلف</b>اضغط «سلفة طالعة» لما حد ياخد فلوس من المحل، أو ضيف الشخص بسلفته القديمة.</div>`:`<div class="empty"><b>مفيش ${t==='c'?'عملاء':'موردين'}</b>ضيفهم بأرصدتهم القديمة عشان الحسابات تبدأ مظبوطة.</div>`}</div>`;
 }
-function balTxt(p){if(!p.bal)return '<span class="mut">خالص</span>';const c=p.type==='c';return p.bal>0?`<span class="${c?'neg':'warn'}">${c?'عليه':'ليه'} ${fmt(p.bal)}</span>`:`<span class="pos">${c?'ليه':'علينا ليه'} ${fmt(-p.bal)}</span>`.replace('علينا ليه','ليك عنده')}
+function balTxt(p){if(!p.bal)return '<span class="mut">خالص</span>';const c=p.type!=='s';return p.bal>0?`<span class="${c?'neg':'warn'}">${c?'عليه':'ليه'} ${fmt(p.bal)}</span>`:`<span class="pos">${c?'ليه':'علينا ليه'} ${fmt(-p.bal)}</span>`.replace('علينا ليه','ليك عنده')}
 function partyRow(p){return `<button class="row" data-a="statement" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.phone||'بدون موبايل')}</div></div><div class="amt">${balTxt(p)}</div></button>`}
 
 /* ---------- ضبط الأرصدة (جرد): type the real numbers by hand — money, stock, accounts ---------- */
@@ -581,7 +586,7 @@ function cntTab(){return S.ctab||'money'}
 function vCount(){const t=cntTab(),c=S.cnt||(S.cnt={m:{},q:{},p:{}}),n=Object.keys(c.m).length+Object.keys(c.q).length+Object.keys(c.p).length;
   const tb=(k,l)=>`<button class="${t===k?'on':''}" data-a="ctab" data-k="${k}">${l}</button>`;
   return header('ضبط الأرصدة (جرد)')+`<div class="note" style="margin:0 0 12px">اكتب الأرقام الحقيقية اللي عندك دلوقتي. أي خانة تسيبها فاضية بتفضل زي ما هي. الفرق بيتسجل «تسوية جرد» ومش بيبوّظ الفواتير القديمة.</div>
-<div class="seg" style="margin-bottom:12px">${tb('money','💰 الفلوس')}${tb('stock','📦 البضاعة')}${tb('c','👤 العملاء')}${tb('s','🚚 الموردين')}</div>
+<div class="seg" style="margin-bottom:12px">${tb('money','💰 الفلوس')}${tb('stock','📦 البضاعة')}${tb('c','👤 العملاء')}${tb('s','🚚 الموردين')}${tb('l','🤝 السلف')}</div>
 <div id="cnt_body">${cntBody()}</div>
 <div class="cnt-bar"><span id="cnt_n">${n?`اتغيّر ${n} رقم`:'لسه ما غيّرتش حاجة'}</span><button class="ghost" data-a="cntclear" style="width:auto">الغي</button><button class="primary" data-a="cntsave" data-save style="width:auto">حفظ الجرد</button></div>`}
 function cntBody(){const t=cntTab(),c=S.cnt,q=(S.cq||'').trim().toLowerCase();
@@ -592,14 +597,14 @@ function cntBody(){const t=cntTab(),c=S.cnt,q=(S.cq||'').trim().toLowerCase();
     const ch=Object.keys(c.q).length;
     return srch+`<div class="quick" style="margin-bottom:8px"><button class="ghost" data-a="cntzero">الأصناف اللي ما كتبتلهاش رقم تبقى صفر</button>${ch?`<span class="mini" style="align-self:center">كتبت ${ch} صنف</span>`:''}</div>
 <div class="list">${a.slice(0,400).map(p=>`<div class="row"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.code?esc(p.code)+' · ':''}المسجل: ${fmt(p.qty)}</div></div><div style="width:110px">${inp('q',p.id,p.qty)}</div></div>`).join('')||'<div class="empty">مفيش أصناف.</div>'}</div>${a.length>400?`<div class="mini" style="margin-top:6px">ظاهر أول 400 صنف، ابحث عشان توصل للباقي.</div>`:''}`}
-  const cust=t==='c';let a=S.parties.filter(p=>p.type===t);if(q)a=a.filter(p=>p.name.toLowerCase().includes(q)||(p.phone||'').includes(q));
-  return srch+`<div class="mini" style="margin-bottom:8px">${cust?'اكتب اللي على العميل (لو هو ليه فلوس عندك اكتبها بالسالب، مثلاً ‎-500)':'اكتب اللي علينا للمورد (لو هو عليه فلوس لينا اكتبها بالسالب)'}.</div>
-<div class="list">${a.map(p=>`<div class="row"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">المسجل: ${balTxt(p)}</div></div><div style="width:130px">${inp('p',p.id,p.bal)}</div></div>`).join('')||`<div class="empty">مفيش ${cust?'عملاء':'موردين'}.</div>`}</div>`}
+  const cust=t!=='s';let a=S.parties.filter(p=>p.type===t);if(q)a=a.filter(p=>p.name.toLowerCase().includes(q)||(p.phone||'').includes(q));
+  return srch+`<div class="mini" style="margin-bottom:8px">${t==='l'?'اكتب السلفة اللي على الشخص (لو احنا اللي متسلفين منه اكتبها بالسالب، مثلاً ‎-500)':cust?'اكتب اللي على العميل (لو هو ليه فلوس عندك اكتبها بالسالب، مثلاً ‎-500)':'اكتب اللي علينا للمورد (لو هو عليه فلوس لينا اكتبها بالسالب)'}.</div>
+<div class="list">${a.map(p=>`<div class="row"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">المسجل: ${balTxt(p)}</div></div><div style="width:130px">${inp('p',p.id,p.bal)}</div></div>`).join('')||`<div class="empty">مفيش ${t==='l'?'سلف':cust?'عملاء':'موردين'}.</div>`}</div>`}
 function cntCount(){const c=S.cnt,n=Object.keys(c.m).length+Object.keys(c.q).length+Object.keys(c.p).length,e=$('#cnt_n');if(e)e.textContent=n?`اتغيّر ${n} رقم`:'لسه ما غيّرتش حاجة'}
 function cntReview(){const c=S.cnt,rows=[],day=today();
   WK.forEach(k=>{if(c.m[k]==null)return;const v=num(c.m[k]),d=r2(v-(S.shop[k]||0));if(d)rows.push({g:'m',k,t:W[k],from:S.shop[k]||0,to:v,d})});
   Object.entries(c.q).forEach(([id,x])=>{const p=P(id);if(!p)return;const v=num(x);if(r2(v-p.qty))rows.push({g:'q',k:id,t:p.name,from:p.qty,to:v,d:r2(v-p.qty)})});
-  Object.entries(c.p).forEach(([id,x])=>{const p=PT(id);if(!p)return;const v=num(x);if(r2(v-p.bal))rows.push({g:'p',k:id,t:p.name+(p.type==='c'?' (عميل)':' (مورد)'),from:p.bal,to:v,d:r2(v-p.bal)})});
+  Object.entries(c.p).forEach(([id,x])=>{const p=PT(id);if(!p)return;const v=num(x);if(r2(v-p.bal))rows.push({g:'p',k:id,t:p.name+(p.type==='c'?' (عميل)':p.type==='l'?' (سلف)':' (مورد)'),from:p.bal,to:v,d:r2(v-p.bal)})});
   if(!rows.length){toast('مفيش أرقام اتغيرت');return}
   const sec=(g,h)=>{const r=rows.filter(x=>x.g===g);return r.length?`<div class="sec-h"><h2>${h}</h2><span class="mut">${r.length}</span></div><div class="list" style="margin-bottom:12px">${r.map(x=>`<div class="row"><div class="main"><div class="t">${esc(x.t)}</div><div class="s">${fmt(x.from)} ← ${fmt(x.to)}</div></div><div class="amt ${x.d<0?'neg':'pos'}">${x.d>0?'+':''}${fmt(x.d)}</div></div>`).join('')}</div>`:''};
   S.cntRows=rows;
@@ -836,7 +841,8 @@ function pPick(id){const d=S.draft;d.partyId=id||'';d.pq='';d.phi=0;
 /* name picker inside collect / pay forms */
 function mResHtml(){const q=($('#m_pq')?.value||'').trim().toLowerCase(),t=S.mpt;if(!q)return '';
   const a=S.parties.filter(p=>p.type===t&&(p.name.toLowerCase().includes(q)||(p.phone||'').includes(q))).slice(0,8);
-  return a.length?a.map((p,i)=>`<button class="row ${i===(S.mphi||0)?'hi':''}" data-a="mpick" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}</div></div><span class="tag">اختار</span></button>`).join(''):'<div class="empty" style="padding:12px">مفيش حد بالاسم ده.</div>'}
+  return a.length?a.map((p,i)=>`<button class="row ${i===(S.mphi||0)?'hi':''}" data-a="mpick" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div><div class="s">${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}</div></div><span class="tag">اختار</span></button>`).join('')+(t==='l'&&!a.some(p=>p.name.toLowerCase()===q)?lnewBtn():''):t==='l'?lnewBtn():'<div class="empty" style="padding:12px">مفيش حد بالاسم ده.</div>'}
+const lnewBtn=()=>`<button class="row" data-a="lnew"><div class="main"><div class="t" style="color:var(--ac)">+ ضيف «${esc($('#m_pq').value.trim())}» في السلف</div></div></button>`;
 function mPick(id,keep){const p=PT(id);if(!p)return;S.mpid=id;const q=$('#m_pq');if(q)q.value=p.name;const r=$('#m_pres');if(r)r.hidden=true;
   const i=$('#m_pinf');if(i)i.innerHTML=`${p.phone?esc(p.phone)+' · ':''}${balTxt(p)}`;$('#m_amt')?.focus()}
 function resHtml(){
@@ -959,14 +965,15 @@ function showMove(id){const m=S.moves.find(x=>x.id===id);if(!m)return;
 <button class="danger" data-a="delmove" data-id="${m.id}">امسح الحركة (الخزنة والحساب يرجعوا زي ما كانوا)</button>`)}
 
 function moveForm(t){
-  S.mpt=t==='collect'?'c':'s';const isParty=t==='collect'||t==='pay',ps=S.parties.filter(p=>p.type===(t==='collect'?'c':'s'));
-  const tabs=['in','out','transfer','adj'].includes(t)?`<div class="seg" style="margin-bottom:14px">${['in','out','transfer'].map(k=>`<button class="${t===k?'on':''}" data-a="move" data-t="${k}">${{in:'إيداع',out:'سحب',transfer:'تحويل'}[k]}</button>`).join('')}</div>`:'';
+  const LN=LOANS.includes(t);S.mpt=t==='collect'?'c':LN?'l':'s';const isParty=t==='collect'||t==='pay'||LN,ps=S.parties.filter(p=>p.type===S.mpt);
+  const tabs=['in','out','transfer','adj'].includes(t)?`<div class="seg" style="margin-bottom:14px">${['in','out','transfer'].map(k=>`<button class="${t===k?'on':''}" data-a="move" data-t="${k}">${{in:'إيداع',out:'سحب',transfer:'تحويل'}[k]}</button>`).join('')}</div>`
+   :LN?`<div class="seg" style="margin-bottom:8px">${LOANS.map(k=>`<button class="${t===k?'on':''}" data-a="move" data-t="${k}">${{lend:'سلفة طالعة',lret:'رجّعلنا',borrow:'اتسلفنا',bret:'رجّعنا'}[k]}</button>`).join('')}</div><p class="mini" style="margin:0 0 12px">${{lend:'حد خد فلوس من المحل وهيرجعها',lret:'حد رجّع سلفة كان واخدها',borrow:'خدنا فلوس من حد وهنرجعها',bret:'رجّعنا لحد فلوس كنا متسلفينها منه'}[t]}</p>`:'';
   openSheet(`<h3>${MOVE[t]}</h3>${tabs}
-${isParty?`<label class="f"><span>${t==='collect'?'العميل':'المورد'}</span><div class="qe-s"><input id="m_pq" placeholder="اكتب اسم ${t==='collect'?'العميل':'المورد'} أو موبايله" autocomplete="off"><div class="list res" id="m_pres" hidden></div></div><div class="mini" id="m_pinf" style="margin-top:4px"></div></label>${ps.length?'':`<div class="err">مفيش ${t==='collect'?'عملاء':'موردين'} لسه. ضيفهم من صفحة الحسابات.</div>`}`:''}
+${isParty?`<label class="f"><span>${t==='collect'?'العميل':LN?'الشخص':'المورد'}</span><div class="qe-s"><input id="m_pq" placeholder="اكتب اسم ${t==='collect'?'العميل':LN?'الشخص':'المورد'} أو موبايله" autocomplete="off"><div class="list res" id="m_pres" hidden></div></div><div class="mini" id="m_pinf" style="margin-top:4px"></div></label>${ps.length?'':`<div class="err">مفيش ${t==='collect'?'عملاء':'موردين'} لسه. ضيفهم من صفحة الحسابات.</div>`}`:''}
 ${t==='expense'?`<label class="f"><span>نوع المصروف</span><select id="m_cat">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></label>`:''}
 <label class="f"><span>المبلغ</span><input id="m_amt" class="money" inputmode="decimal" placeholder="0"></label>
-${(()=>{const dw=['collect','expense'].includes(t)?'drawer':'cash',seg=(id,on)=>`<div class="seg" id="${id}">${WK.map(k=>`<button class="${k===on?'on':''}" data-a="wsel" data-k="${k}">${W[k]}</button>`).join('')}</div>`;
-  return t==='transfer'?`<label class="f"><span>من</span>${seg('m_w','cash')}</label><label class="f"><span>إلى</span>${seg('m_to','insta')}</label>`:`<label class="f"><span>${['collect','in'].includes(t)?'تدخل':'تطلع من'}</span>${seg('m_w',dw)}</label>`})()}
+${(()=>{const dw=['collect','expense','lret'].includes(t)?'drawer':'cash',seg=(id,on)=>`<div class="seg" id="${id}">${WK.map(k=>`<button class="${k===on?'on':''}" data-a="wsel" data-k="${k}">${W[k]}</button>`).join('')}</div>`;
+  return t==='transfer'?`<label class="f"><span>من</span>${seg('m_w','cash')}</label><label class="f"><span>إلى</span>${seg('m_to','insta')}</label>`:`<label class="f"><span>${['collect','in','lret','borrow'].includes(t)?'تدخل':'تطلع من'}</span>${seg('m_w',dw)}</label>`})()}
 <label class="f"><span>ملاحظة ${t==='out'?'(مثلاً: سحب شخصي)':'(اختياري)'}</span><input id="m_note"></label>
 <div id="m_err"></div><button class="primary" data-a="savemove" data-t="${t}" data-save>حفظ</button>`);
   setTimeout(()=>$('#m_amt')?.focus(),50);
@@ -978,9 +985,9 @@ async function saveMove(t){
   const m={id:uid(),type:t,amount:amt,method,ts:Date.now(),day:today(),note:$('#m_note').value.trim()};
   if(t==='transfer'){m.to=$('#m_to .on')?.dataset.k||'insta';if(m.to===method)return err('اختار خزنتين مختلفين للتحويل.')}
   if(t==='expense')m.cat=$('#m_cat').value;
-  if(t==='collect'||t==='pay'){const p=PT(S.mpid);if(!p)return err('اكتب الاسم واختاره من القايمة.');m.partyId=p.id;m.partyName=p.name}
+  if(t==='collect'||t==='pay'||LOANS.includes(t)){const p=PT(S.mpid);if(!p)return err('اكتب الاسم واختاره من القايمة.');m.partyId=p.id;m.partyName=p.name}
   const bal=S.shop[method]||0;
-  if(['expense','pay','out','transfer'].includes(t)&&amt>bal&&!S.okNeg){S.okNeg=true;return err(`الموجود في ${W[method]} ${fmt(bal)} بس. لو متأكد اضغط حفظ تاني.`)}
+  if(['expense','pay','out','transfer','lend','bret'].includes(t)&&amt>bal&&!S.okNeg){S.okNeg=true;return err(`الموجود في ${W[method]} ${fmt(bal)} بس. لو متأكد اضغط حفظ تاني.`)}
   S.okNeg=false;
   await guard(async()=>{await applyMove(m,1);await put('moves',m);closeSheet();toast('اتسجلت '+MOVE[t])});
 }
@@ -1011,10 +1018,10 @@ async function saveProduct(id,fromEd){
 
 function partyForm(fromEd,nm){
   const t=fromEd?KD[S.draft.kind].pt:S.ptab;
-  openSheet(`<h3>${t==='c'?'عميل جديد':'مورد جديد'}</h3>
+  openSheet(`<h3>${t==='c'?'عميل جديد':t==='l'?'شخص جديد في السلف':'مورد جديد'}</h3>
 <label class="f"><span>الاسم</span><input id="c_name" value="${esc(nm||'')}"></label>
 <label class="f"><span>الموبايل</span><input id="c_phone" inputmode="tel" class="money" placeholder="01xxxxxxxxx"></label>
-<label class="f"><span>${t==='c'?'رصيد قديم عليه (لو فيه)':'رصيد قديم ليه عندنا (لو فيه)'}</span><input id="c_open" class="money" inputmode="decimal" placeholder="0"></label>
+<label class="f"><span>${t==='c'?'رصيد قديم عليه (لو فيه)':t==='l'?'سلفة قديمة عليه (لو احنا اللي متسلفين منه اكتبها بالسالب)':'رصيد قديم ليه عندنا (لو فيه)'}</span><input id="c_open" class="money" inputmode="decimal" placeholder="0"></label>
 <div id="c_err"></div><button class="primary" data-a="saveparty" data-k="${t}" data-fromed="${fromEd?1:''}" data-save>حفظ</button>`);
   setTimeout(()=>$('#c_name')?.focus(),50);
 }
@@ -1028,17 +1035,18 @@ async function saveParty(t,fromEd){
 }
 
 async function showStatement(id){
-  const p=PT(id);if(!p)return;const c=p.type==='c';
+  const p=PT(id);if(!p)return;const c=p.type==='c',L=p.type==='l';
   openSheet(`<h3>${esc(p.name)}</h3><div class="empty">بيجيب كشف الحساب…</div>`);
   let inv=[],mv=[];try{[inv,mv]=await Promise.all([fetchWhere('invoices','partyId','==',id),fetchWhere('moves','partyId','==',id)])}catch(e){}
   if(!S.sheetOpen)return;S.stmt={p,inv,mv};docPrep();const lastInv=inv.slice().sort((a,b)=>b.ts-a.ts)[0];
   const rows=[...inv.map(i=>isRet(i.kind)?({id:i.id,ts:i.ts,day:i.day,t:`${KN[i.kind]} #${i.no}`,s:`قيمة ${fmt(i.total)} · رجع فلوس ${fmt(paidOf(i))}`,d:-i.rest})
       :({id:i.id,ts:i.ts,day:i.day,t:`فاتورة ${KN[i.kind]} #${i.no}`,s:`إجمالي ${fmt(i.total)} · مدفوع ${fmt(paidOf(i))}`,d:i.rest})),
-    ...mv.map(m=>m.type==='padj'?({ts:m.ts,day:m.day,t:'ضبط رصيد',s:m.note||'جرد',d:m.amount}):({ts:m.ts,day:m.day,t:m.type==='collect'?'تحصيل':'سداد',s:W[m.method]+(m.note?' · '+m.note:''),d:-m.amount}))].sort((a,b)=>a.ts-b.ts);
+    ...mv.map(m=>m.type==='padj'?({ts:m.ts,day:m.day,t:'ضبط رصيد',s:m.note||'جرد',d:m.amount}):({ts:m.ts,day:m.day,t:LOANS.includes(m.type)?MOVE[m.type]:m.type==='collect'?'تحصيل':'سداد',s:W[m.method]+(m.note?' · '+m.note:''),d:mvEff(m)}))].sort((a,b)=>a.ts-b.ts);
   let run=p.open||0;rows.forEach(r=>{run=r2(run+r.d);r.run=run});
-  const text=`${S.shop.name}\nكشف حساب: ${p.name}\nبتاريخ: ${today()}\n────────────\n${p.open?`رصيد سابق: ${fmt(p.open)}\n`:''}${rows.map(r=>`${r.day} ${r.t}: ${r.d>0?'+':''}${fmt(r.d)} ← ${fmt(r.run)}`).join('\n')}\n────────────\n${c?(p.bal>=0?'المطلوب منك':'ليك عندنا'):'الرصيد'}: ${fmt(Math.abs(p.bal))} جنيه`;
-  openSheet(`<h3>${esc(p.name)}</h3><div class="stat" style="margin-bottom:12px"><span class="lbl">${c?'الرصيد':'رصيد المورد'}</span><b>${balTxt(p)}</b>${p.phone?`<span class="mini">${esc(p.phone)}</span>`:''}</div>
-<button class="primary" data-a="move" data-t="${c?'collect':'pay'}" data-pid="${p.id}">${c?'تحصيل مبلغ منه':'سداد مبلغ له'}</button>${lastInv?`<button class="ghost" style="width:100%;margin-top:8px" data-a="stinv" data-id="${lastInv.id}">🧾 آخر فاتورة (#${lastInv.no} · ${dshort(lastInv.day)} · ${fmt(lastInv.total)})</button>`:''}
+  const text=`${S.shop.name}\nكشف حساب: ${p.name}\nبتاريخ: ${today()}\n────────────\n${p.open?`رصيد سابق: ${fmt(p.open)}\n`:''}${rows.map(r=>`${r.day} ${r.t}: ${r.d>0?'+':''}${fmt(r.d)} ← ${fmt(r.run)}`).join('\n')}\n────────────\n${c||L?(p.bal>=0?'المطلوب منك':'ليك عندنا'):'الرصيد'}: ${fmt(Math.abs(p.bal))} جنيه`;
+  openSheet(`<h3>${esc(p.name)}</h3><div class="stat" style="margin-bottom:12px"><span class="lbl">${c?'الرصيد':L?'رصيد السلف':'رصيد المورد'}</span><b>${balTxt(p)}</b>${p.phone?`<span class="mini">${esc(p.phone)}</span>`:''}</div>
+${L?`<div class="grid2"><button class="primary" data-a="move" data-t="lret" data-pid="${p.id}">↩ رجّع سلفة</button><button class="ghost" data-a="move" data-t="lend" data-pid="${p.id}">💸 سلفة جديدة</button></div><div class="grid2" style="margin-top:8px"><button class="ghost" data-a="move" data-t="borrow" data-pid="${p.id}">اتسلفنا منه</button><button class="ghost" data-a="move" data-t="bret" data-pid="${p.id}">رجّعنا له</button></div>`
+:`<button class="primary" data-a="move" data-t="${c?'collect':'pay'}" data-pid="${p.id}">${c?'تحصيل مبلغ منه':'سداد مبلغ له'}</button>`}${lastInv?`<button class="ghost" style="width:100%;margin-top:8px" data-a="stinv" data-id="${lastInv.id}">🧾 آخر فاتورة (#${lastInv.no} · ${dshort(lastInv.day)} · ${fmt(lastInv.total)})</button>`:''}
 ${docBtns('st',p.id)}
 <div class="sec-h" style="margin-top:16px"><h2>كشف الحساب</h2><span class="mut">${rows.length} حركة</span></div>
 <div class="list" style="margin-bottom:12px">${p.open?`<div class="row"><div class="main"><div class="t">رصيد سابق</div></div><div class="amt">${fmt(p.open)}</div></div>`:''}${rows.length?rows.slice().reverse().map(r=>`<${r.id?`button class="row" data-a="stinv" data-id="${r.id}"`:'div class="row"'}><div class="main"><div class="t">${r.t}</div><div class="s">${dshort(r.day)} · ${esc(r.s)}</div></div><div class="amt ${r.d<0?'pos':''}">${r.d>0?'+':''}${fmt(r.d)}<small>الرصيد ${fmt(r.run)}</small></div></${r.id?'button':'div'}>`).join(''):'<div class="empty">مفيش حركات لسه.</div>'}</div>
@@ -1251,16 +1259,16 @@ async function pdfFrom(pages){
 /* statement rows with what increases the balance (عليه for a customer) and what lowers it (ليه), from a date if given */
 function stmtData(st,from){const {p,inv,mv}=st;
   const all=[...inv.map(i=>isRet(i.kind)?{id:i.id,ts:i.ts,day:i.day,t:`${KN[i.kind]} #${i.no}`,inc:paidOf(i),dec:i.total}:{id:i.id,ts:i.ts,day:i.day,t:`فاتورة ${KN[i.kind]} #${i.no}`,inc:i.total,dec:paidOf(i)}),
-    ...mv.map(m=>m.type==='padj'?{ts:m.ts,day:m.day,t:'ضبط رصيد'+(m.note?' · '+m.note:''),inc:Math.max(0,m.amount),dec:Math.max(0,-m.amount)}:{ts:m.ts,day:m.day,t:(m.type==='collect'?'تحصيل':'سداد')+' '+W[m.method]+(m.note?' · '+m.note:''),inc:0,dec:m.amount})].sort((a,b)=>a.ts-b.ts);
+    ...mv.map(m=>{const e=mvEff(m);return {ts:m.ts,day:m.day,t:(m.type==='padj'?'ضبط رصيد':LOANS.includes(m.type)?MOVE[m.type]+' · '+W[m.method]:(m.type==='collect'?'تحصيل':'سداد')+' '+W[m.method])+(m.note?' · '+m.note:''),inc:Math.max(0,e),dec:Math.max(0,-e)}})].sort((a,b)=>a.ts-b.ts);
   let open=r2(p.open||0);const rows=[];all.forEach(r=>{if(from&&r.day<from){open=r2(open+r.inc-r.dec);return}rows.push(r)});
   let run=open;rows.forEach(r=>{run=r2(run+r.inc-r.dec);r.run=run});
   return {open,rows,end:run,inc:r2(sum(rows,'inc')),dec:r2(sum(rows,'dec'))}}
-function stmtSpec(st,from){const p=st.p,c=p.type==='c',d=stmtData(st,from),L=c?['عليه','ليه']:['ليه','اتدفع له'];
+function stmtSpec(st,from){const p=st.p,c=p.type!=='s',d=stmtData(st,from),L=c?['عليه','ليه']:['ليه','اتدفع له'];
   const bl=v=>c?(v>0?'المطلوب منك':v<0?'ليك عندنا':'الحساب خالص'):(v>0?'ليك عندنا':v<0?'عليك لينا':'الحساب خالص');
   const rows=[];if(d.open||from)rows.push({v:['',from?`رصيد سابق قبل ${dayDmy(from)}`:'رصيد سابق',d.open>0?fmt(d.open):'',d.open<0?fmt(-d.open):'',fmt(d.open)],bold:1});
   d.rows.forEach(r=>rows.push({v:[dayDmy(r.day),r.t,r.inc?fmt(r.inc):'',r.dec?fmt(r.dec):'',fmt(r.run)],tone:{2:DOC.bad,3:DOC.good}}));
-  return {title:'كشف حساب',sub:from?`من ${dayDmy(from)}`:'',file:`كشف حساب ${p.name}`,
-    info:[[c?'العميل':'المورد',p.name],['الموبايل',p.phone||'—'],['تاريخ الكشف',dmy(new Date())],['عدد الحركات',String(d.rows.length)]],
+  return {title:p.type==='l'?'كشف حساب سلف':'كشف حساب',sub:from?`من ${dayDmy(from)}`:'',file:`كشف حساب ${p.name}`,
+    info:[[p.type==='l'?'الاسم':c?'العميل':'المورد',p.name],['الموبايل',p.phone||'—'],['تاريخ الكشف',dmy(new Date())],['عدد الحركات',String(d.rows.length)]],
     cols:[{t:'التاريخ',w:150,n:1},{t:'البيان',w:0},{t:L[0],w:170,n:1},{t:L[1],w:170,n:1},{t:'الرصيد',w:180,n:1}],rows,empty:'مفيش حركات في الفترة دي',
     totals:[...(d.open||from?[['رصيد سابق',fmt(d.open)]]:[]),['إجمالي '+L[0],fmt(d.inc),0,DOC.bad],['إجمالي '+L[1],fmt(d.dec),0,DOC.good],[bl(d.end),fmt(Math.abs(d.end)),1,d.end>0===c?DOC.bad:d.end?DOC.good:DOC.ink]],
     side:[bl(d.end),fmt(Math.abs(d.end))+' جنيه',d.end>0===c?DOC.bad:d.end?DOC.good:DOC.ink]}}
@@ -1300,7 +1308,7 @@ function docDownload(r){const u=URL.createObjectURL(r.blob),a=document.createEle
 /* ---------- report documents (period from the reports page, or current balances) ---------- */
 const REPS=[['mov','حركة الخزنة واليومية','كل اللي دخل وخرج، بالخزن ويوم بيوم'],['sales','المبيعات والأرباح','فواتير البيع والمرتجعات وربح كل فاتورة'],['items','الأصناف المباعة','كمية ومبيعات وربح كل صنف'],
   ['exp','المصاريف','حسب النوع وبالتفصيل'],['buy','المشتريات','فواتير الشراء ومرتجعاتها'],['cp','التحصيلات والسداد','اللي اتحصل من العملاء واتدفع للموردين'],
-  ['cust','أرصدة العملاء','كل عميل عليه أو ليه كام (دلوقتي)'],['supp','أرصدة الموردين','كل مورد ليه أو عليه كام (دلوقتي)'],['stock','المخزن وقيمة البضاعة','الكميات والتكلفة والنواقص (دلوقتي)'],['low','الأصناف الناقصة','اللي خلصت أو قربت تخلص، والمقترح تطلبه (دلوقتي)']];
+  ['cust','أرصدة العملاء','كل عميل عليه أو ليه كام (دلوقتي)'],['supp','أرصدة الموردين','كل مورد ليه أو عليه كام (دلوقتي)'],['loans','السلف','مين عليه سلف ومين احنا متسلفين منه (دلوقتي)'],['stock','المخزن وقيمة البضاعة','الكميات والتكلفة والنواقص (دلوقتي)'],['low','الأصناف الناقصة','اللي خلصت أو قربت تخلص، والمقترح تطلبه (دلوقتي)']];
 const PERIODIC=new Set(['mov','sales','items','exp','buy','cp']);
 const sgnTone=v=>v<0?DOC.bad:v>0?DOC.good:DOC.ink;
 const whenTxt=(ts,multi)=>{const d=new Date(ts),h=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`;return multi?`${d.getDate()}/${d.getMonth()+1} ${h}`:h};
@@ -1310,7 +1318,7 @@ function flowsOf(x){
   const k=W[x.method]?x.method:'cash';
   if(x.type==='transfer'||x.type==='close')return[{k,v:-x.amount,tr:1},{k:mvTo(x),v:x.amount,tr:1}];
   if(x.type==='padj')return[];
-  const dl={collect:1,in:1,adj:1,expense:-1,pay:-1,out:-1}[x.type]||0;return[{k,v:dl*x.amount}]}
+  const dl={collect:1,in:1,adj:1,lret:1,borrow:1,expense:-1,pay:-1,out:-1,lend:-1,bret:-1}[x.type]||0;return[{k,v:dl*x.amount}]}
 function recLabel(x){if(x.kind)return [isRet(x.kind)?`${KN[x.kind]} #${x.no}`:`فاتورة ${KN[x.kind]} #${x.no}`,x.partyName||''];
   const nm=x.type==='transfer'?`تحويل ${W[x.method]} ← ${W[mvTo(x)]}`:x.type==='close'?`تقفيل ${W[x.method]} ← الخزنة`:MOVE[x.type]||x.type;
   return [nm,[x.partyName,x.cat,x.note].filter(Boolean).join(' · ')]}
@@ -1369,6 +1377,11 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
     return {...base,kpis:[['تحصيلات من العملاء',fmt(sum(col,'amount')),DOC.good],['سداد للموردين',fmt(sum(pay,'amount')),DOC.bad]],
       sections:[{h:'تحصيلات من العملاء',cols,rows:col.map(m=>rw(m,DOC.good)),empty:'مفيش تحصيلات',totals:[['إجمالي التحصيلات',fmt(sum(col,'amount')),1,DOC.good]]},
         {h:'سداد للموردين',cols,rows:pay.map(m=>rw(m,DOC.bad)),empty:'مفيش سداد',totals:[['إجمالي السداد',fmt(sum(pay,'amount')),1,DOC.bad]]}]}}
+  if(key==='loans'){const ps=S.parties.filter(p=>p.type==='l'&&r2(p.bal)),pos=ps.filter(p=>p.bal>0).sort((a,b)=>b.bal-a.bal),neg=ps.filter(p=>p.bal<0).sort((a,b)=>a.bal-b.bal);
+    const cols=[{t:'م',w:70,n:1},{t:'الاسم',w:0},{t:'الموبايل',w:240,n:1},{t:'المبلغ',w:200,n:1}],rw=(p,k,tc)=>({v:[String(k+1),p.name,p.phone||'',fmt(Math.abs(p.bal))],tone:{3:tc}}),P1=r2(sum(pos,'bal')),N1=r2(-sum(neg,'bal'));
+    return {...base,kpis:[['سلف لينا عند الناس',fmt(P1),DOC.bad],['سلف علينا للناس',fmt(N1),DOC.good],['عدد الأشخاص',String(ps.length)]],
+      sections:[{h:'سلف لينا (هترجعلنا)',cols,rows:pos.map((p,k)=>rw(p,k,DOC.bad)),empty:'مفيش',totals:[['الإجمالي',fmt(P1),1,DOC.bad]]},
+        {h:'سلف علينا (هنرجعها)',cols,rows:neg.map((p,k)=>rw(p,k,DOC.good)),empty:'مفيش',totals:[['الإجمالي',fmt(N1),1,DOC.good]]}]}}
   if(key==='cust'||key==='supp'){const c=key==='cust',ps=S.parties.filter(p=>p.type===(c?'c':'s')&&r2(p.bal)),pos=ps.filter(p=>p.bal>0).sort((a,b)=>b.bal-a.bal),neg=ps.filter(p=>p.bal<0).sort((a,b)=>a.bal-b.bal);
     const cols=[{t:'م',w:70,n:1},{t:c?'العميل':'المورد',w:0},{t:'الموبايل',w:240,n:1},{t:'الرصيد',w:200,n:1}],rw=(p,k,tc)=>({v:[String(k+1),p.name,p.phone||'',fmt(Math.abs(p.bal))],tone:{3:tc}});
     const P1=r2(sum(pos,'bal')),N1=r2(-sum(neg,'bal'));
@@ -1565,6 +1578,8 @@ document.addEventListener('click',async e=>{
     case 'stinv':{const i=await getInv(ds.id);if(i)showInvoice(i.id,i);else toast('مش لاقي الفاتورة');break}
     case 'docshare':docShare(b);break;
     case 'repdoc':repSheet(ds.id);break;
+    case 'lnew':{const name=($('#m_pq')?.value||'').trim();if(!name)break;let p=S.parties.find(x=>x.type==='l'&&x.name===name);
+      if(!p){p={id:uid(),type:'l',name,phone:'',open:0,bal:0,created:Date.now()};await guard(async()=>{await put('parties',p);sortAll()})}mPick(p.id);break}
     case 'docsend':if(S.docLast)docSend(S.docLast);break;
     case 'psize':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));break;
     case 'showinv':showInvoice(ds.id);break;
@@ -1577,7 +1592,7 @@ document.addEventListener('click',async e=>{
     case 'pimprun':runPImport();break;
     case 'imprun':runImport();break;
     case 'delmove':{const m=S.moves.find(x=>x.id===ds.id);confirmSheet(`هتتمسح حركة «${MOVE[m.type]}» بمبلغ ${fmt(Math.abs(m.amount))}.`,async()=>{await applyMove(m,-1);await del('moves',m.id);closeSheet();toast('اتمسحت الحركة')});break}
-    case 'move':S.okNeg=false;S.mpid=null;S.mphi=0;moveForm(ds.t);if(ds.pid)setTimeout(()=>mPick(ds.pid,true),0);else setTimeout(()=>$('#m_pq')?.focus(),60);break;
+    case 'move':{const keep=!ds.pid&&LOANS.includes(ds.t)&&S.mpid&&PT(S.mpid)?.type==='l'?S.mpid:null;S.okNeg=false;S.mpid=null;S.mphi=0;moveForm(ds.t);if(ds.pid||keep)setTimeout(()=>mPick(ds.pid||keep,true),0);else setTimeout(()=>$('#m_pq')?.focus(),60);break;}
     case 'mpick':mPick(ds.id);break;
     case 'wsel':b.parentElement.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));S.okNeg=false;break;
     case 'savemove':saveMove(ds.t);break;
