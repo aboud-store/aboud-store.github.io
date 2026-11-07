@@ -1296,7 +1296,7 @@ function docDownload(r){const u=URL.createObjectURL(r.blob),a=document.createEle
 /* ---------- report documents (period from the reports page, or current balances) ---------- */
 const REPS=[['mov','حركة الخزنة واليومية','كل اللي دخل وخرج، بالخزن ويوم بيوم'],['sales','المبيعات والأرباح','فواتير البيع والمرتجعات وربح كل فاتورة'],['items','الأصناف المباعة','كمية ومبيعات وربح كل صنف'],
   ['exp','المصاريف','حسب النوع وبالتفصيل'],['buy','المشتريات','فواتير الشراء ومرتجعاتها'],['cp','التحصيلات والسداد','اللي اتحصل من العملاء واتدفع للموردين'],
-  ['cust','أرصدة العملاء','كل عميل عليه أو ليه كام (دلوقتي)'],['supp','أرصدة الموردين','كل مورد ليه أو عليه كام (دلوقتي)'],['stock','المخزن وقيمة البضاعة','الكميات والتكلفة والنواقص (دلوقتي)']];
+  ['cust','أرصدة العملاء','كل عميل عليه أو ليه كام (دلوقتي)'],['supp','أرصدة الموردين','كل مورد ليه أو عليه كام (دلوقتي)'],['stock','المخزن وقيمة البضاعة','الكميات والتكلفة والنواقص (دلوقتي)'],['low','الأصناف الناقصة','اللي خلصت أو قربت تخلص، والمقترح تطلبه (دلوقتي)']];
 const PERIODIC=new Set(['mov','sales','items','exp','buy','cp']);
 const sgnTone=v=>v<0?DOC.bad:v>0?DOC.good:DOC.ink;
 const whenTxt=(ts,multi)=>{const d=new Date(ts),h=`${d.getHours()%12||12}:${String(d.getMinutes()).padStart(2,'0')} ${d.getHours()<12?'ص':'م'}`;return multi?`${d.getDate()}/${d.getMonth()+1} ${h}`:h};
@@ -1377,6 +1377,17 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
       sections:[{h:'الأصناف',cols:[{t:'م',w:70,n:1},{t:'الصنف',w:0},{t:'الكود',w:160,n:1},{t:'الكمية',w:110,n:1},{t:'التكلفة',w:140,n:1},{t:'القيمة',w:160,n:1}],
         rows:a.map((p,k)=>({v:[String(k+1),p.name,p.code||'',fmt(p.qty),fmt(p.cost),fmt(Math.max(0,p.qty)*p.cost)],tone:{3:p.qty<=0?DOC.bad:DOC.ink}})),empty:'مفيش أصناف',totals:[['قيمة البضاعة بالتكلفة',fmt(val),1]]},
         {h:'نواقص (وصلت للحد الأدنى أو خلصت)',cols:[{t:'الصنف',w:0},{t:'الكود',w:180,n:1},{t:'الموجود',w:150,n:1},{t:'الحد الأدنى',w:160,n:1}],rows:low.map(p=>({v:[p.name,p.code||'',fmt(p.qty),fmt(p.min||0)],tone:{2:DOC.bad}})),empty:'مفيش نواقص'}]}}
+  if(key==='low'){ /* shortage list: finished or at/below the alert level; suggested order = enough for the last 30 days' sales (at least back to the alert level) */
+    const from=Date.now()-30*864e5,sold={};S.invoices.forEach(i=>{if(i.ts<from)return;const g=i.kind==='sale'?1:i.kind==='rsale'?-1:0;if(g)i.lines.forEach(l=>{if(l.pid)sold[l.pid]=(sold[l.pid]||0)+g*l.qty})});
+    const low=S.products.filter(p=>p.qty<=(p.min||0)).map(p=>{const s30=Math.max(0,r2(sold[p.id]||0)),ord=Math.max(1,Math.ceil(Math.max(p.min||0,s30)-Math.max(0,p.qty))),uc=p.lastCost||p.cost||0;return {...p,s30,ord,uc}})
+      .sort((x,y)=>(x.qty>0)-(y.qty>0)||y.s30-x.s30||(x.cat||'').localeCompare(y.cat||'','ar')||x.name.localeCompare(y.name,'ar'));
+    const out=low.filter(p=>p.qty<=0),near=low.filter(p=>p.qty>0),est=r2(sum(low,p=>p.ord*p.uc));
+    const cols=[{t:'م',w:70,n:1},{t:'الصنف',w:0},{t:'الكود',w:150,n:1},{t:'الموجود',w:120,n:1},{t:'الحد',w:90,n:1},{t:'اتباع 30 يوم',w:150,n:1},{t:'اطلب',w:100,n:1},{t:'آخر سعر شراء',w:170,n:1}];
+    const rw=(p,k)=>({v:[String(k+1),p.name,p.code||'',fmt(p.qty),fmt(p.min||0),fmt(p.s30),fmt(p.ord),fmt(p.uc)],tone:{3:p.qty<=0?DOC.bad:DOC.ink,6:DOC.good}});
+    return {...base,kpis:[['خلصت',String(out.length),DOC.bad],['قربت تخلص',String(near.length)],['تكلفة الطلب التقريبية',fmt(est)]],
+      sections:[{h:'أصناف خلصت',cols,rows:out.map(rw),empty:'مفيش أصناف خلصت'},
+        {h:'أصناف قربت تخلص (وصلت للحد)',cols,rows:near.map(rw),empty:'مفيش'}],
+      totals:[['تكلفة الطلب المقترح بآخر سعر شراء',fmt(est),1]],note:'«اطلب» = اللي اتباع آخر 30 يوم أو حد التنبيه (الأكبر) ناقص الموجود.'}}
   return null}
 function repSheet(key){const [,t,d]=REPS.find(r=>r[0]===key),R=S.repData,per=PERIODIC.has(key);docPrep();
   if(per&&!R)return toast('استنى التقرير يحمل الأول');
