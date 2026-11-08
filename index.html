@@ -1472,8 +1472,20 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
       totals:[['تكلفة الطلب المقترح بآخر سعر شراء',fmt(est),1]],note:'«اطلب» = اللي اتباع آخر 30 يوم أو حد التنبيه (الأكبر) ناقص الموجود.'}}
   return null}
 function repSheet(key){const [,t,d]=REPS.find(r=>r[0]===key),R=S.repData,per=PERIODIC.has(key);docPrep();
-  if(per&&!R)return toast('استنى التقرير يحمل الأول');
-  openSheet(`<h3>تقرير ${t}</h3><p class="mut" style="margin:0 0 10px">${d}</p>${per?`<div class="note">الفترة: ${R.f===R.t?dayDmy(R.f):`من ${dayDmy(R.f)} إلى ${dayDmy(R.t)}`} (غيّرها من أعلى صفحة التقارير)</div>`:''}${(()=>{let sp=null;try{sp=repSpec(key)}catch(e){console.error(e)}return sp?specHtml(sp):'<div class="empty">مش قادر أعرض التفاصيل دلوقتي.</div>'})()}${docBtns('rep',key)}`)}
+  if(per&&!R)return toast('استنى التقرير يحمل الأول');S.repKey=key;
+  openSheet(`<h3>تقرير ${t}</h3><p class="mut" style="margin:0 0 10px">${d}</p>${per?`<div id="rp_per">${repPerHtml()}</div>`:''}<div id="rp_body">${repBodyHtml(key)}</div>${docBtns('rep',key)}`)}
+/* period picker inside the report sheet — same choice as the top of the reports page, so both stay in sync */
+function repPerHtml(){const R=S.rng,d=S.rday||today(),r=S.repData||{};
+  return `<div class="seg">${[['day','يوم'],['month','الشهر ده'],['last','الشهر اللي فات'],['custom','فترة']].map(([k,l])=>`<button class="${R===k?'on':''}" data-a="srng" data-k="${k}">${l}</button>`).join('')}</div>
+${R==='day'?`<div class="dnv"><button class="ghost" data-a="srday" data-k="-1">‹ قبله</button><label class="f" style="margin:0;flex:1"><input type="date" id="s_day" value="${d}" max="${today()}"></label><button class="ghost" data-a="srday" data-k="1" ${d>=today()?'disabled':''}>بعده ›</button></div>`:''}
+${R==='custom'?`<div class="grid2" style="margin-top:10px"><label class="f"><span>من</span><input type="date" id="s_from" value="${S.from||today()}"></label><label class="f"><span>إلى</span><input type="date" id="s_to" value="${S.to||today()}"></label></div>`:''}
+<div class="note" style="margin-top:8px">الفترة: ${r.f?(r.f===r.t?dayDmy(r.f):`من ${dayDmy(r.f)} إلى ${dayDmy(r.t)}`):'…'}</div>`}
+function repBodyHtml(key){let sp=null;try{sp=repSpec(key)}catch(e){console.error(e)}return sp?specHtml(sp):'<div class="empty">مش قادر أعرض التفاصيل دلوقتي.</div>'}
+async function repPerChange(){const key=S.repKey;if(!key||!S.sheetOpen)return;
+  const b=$('#rp_body');if(b)b.innerHTML='<div class="empty">بيحسب…</div>';const pe=$('#rp_per');if(pe)pe.innerHTML=repPerHtml();
+  render();await loadReport();
+  const [f,t]=range();if(!S.repData||S.repData.f!==f||S.repData.t!==t)return; /* a newer change is still loading */
+  const b2=$('#rp_body'),p2=$('#rp_per');if(S.repKey!==key||!b2)return;b2.innerHTML=repBodyHtml(key);if(p2)p2.innerHTML=repPerHtml()}
 const tone=c=>c===DOC.good?'var(--good)':c===DOC.bad?'var(--bad)':'';
 const toneSt=c=>tone(c)?` style="color:${tone(c)}"`:'';
 /* the same report the image/PDF is drawn from, shown as a readable page inside the app (just to look) */
@@ -1655,6 +1667,8 @@ document.addEventListener('click',async e=>{
     case 'stinv':{const i=await getInv(ds.id);if(i)showInvoice(i.id,i);else toast('مش لاقي الفاتورة');break}
     case 'docshare':docShare(b);break;
     case 'repdoc':repSheet(ds.id);break;
+    case 'srng':S.rng=ds.k;if(ds.k==='day')S.rday=today();repPerChange();break;
+    case 'srday':{const d=new Date((S.rday||today())+'T12:00');d.setDate(d.getDate()+(+ds.k));const n=dstr(d);if(n>today())break;S.rday=n;repPerChange();break}
     case 'lnew':{const name=($('#m_pq')?.value||'').trim();if(!name)break;let p=S.parties.find(x=>x.type==='l'&&x.name===name);
       if(!p){p={id:uid(),type:'l',name,phone:'',open:0,bal:0,created:Date.now()};await guard(async()=>{await put('parties',p);sortAll()})}mPick(p.id);break}
     case 'docsend':if(S.docLast)docSend(S.docLast);break;
@@ -1733,6 +1747,8 @@ document.addEventListener('change',e=>{
   if(id==='pimp_file'&&e.target.files[0])readPImportFile(e.target.files[0]);
   if(e.target.dataset.pimp&&PIMP){const k=e.target.dataset.pimp,v=e.target.value;if(v==='')delete PIMP.map[k];else{const n=+v;Object.keys(PIMP.map).forEach(o=>{if(PIMP.map[o]===n)delete PIMP.map[o]});PIMP.map[k]=n}renderPImport()}
   if(e.target.dataset.imp&&IMP){const k=e.target.dataset.imp,v=e.target.value;if(v==='')delete IMP.map[k];else{const n=+v;Object.keys(IMP.map).forEach(o=>{if(IMP.map[o]===n)delete IMP.map[o]});IMP.map[k]=n}renderImport()}
+  if(id==='s_day'&&e.target.value){S.rday=e.target.value>today()?today():e.target.value;repPerChange()}
+  if((id==='s_from'||id==='s_to')&&e.target.value){S[id==='s_from'?'from':'to']=e.target.value;repPerChange()}
   if(id==='r_day'&&e.target.value){S.rday=e.target.value>today()?today():e.target.value;render()}
   if(id==='r_from'||id==='r_to'){S[id==='r_from'?'from':'to']=e.target.value;loadReport()}
 });
