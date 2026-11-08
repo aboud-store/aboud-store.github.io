@@ -125,6 +125,13 @@ label.f>span{display:block;margin-bottom:4px}
 .chips button.on{background:var(--ink);color:var(--ink-fg);border-color:var(--ink)}
 .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--ln)}
 .kv:last-child{border-bottom:0}
+.rpv{margin-top:10px}
+.rpv .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.rpv .kpis div{background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:9px 11px}.rpv .kpis span{display:block;font-size:12.5px;color:var(--mut)}.rpv .kpis b{font-family:var(--fd);font-size:18px;font-variant-numeric:tabular-nums}
+.rpv h4{font-size:15px;margin:14px 0 6px}.rpv .tw{overflow-x:auto;background:var(--sf);border:1px solid var(--ln);border-radius:12px}
+.rpv table{width:100%;border-collapse:collapse;font-size:13px;min-width:100%}.rpv th{background:var(--ink);color:var(--ink-fg);font-weight:600;padding:7px 8px;white-space:nowrap;text-align:right}
+.rpv td{padding:7px 8px;border-top:1px solid var(--ln);text-align:right;vertical-align:top}.rpv td.n,.rpv th.n{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rpv tr.bd td{background:var(--ac-soft);font-weight:700}.rpv tbody tr:nth-child(even):not(.bd) td{background:var(--sf2)}.rpv .tot{margin-top:8px}
 .dnv{display:flex;gap:8px;align-items:center;margin-top:10px}.dnv .ghost{width:auto;padding:11px 14px;white-space:nowrap}.dnv .ghost:disabled{opacity:.4}
 .pwc{margin-bottom:12px;border:1.5px solid var(--ac)}
 .kv b{font-family:var(--fd);font-variant-numeric:tabular-nums}
@@ -1466,7 +1473,19 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
   return null}
 function repSheet(key){const [,t,d]=REPS.find(r=>r[0]===key),R=S.repData,per=PERIODIC.has(key);docPrep();
   if(per&&!R)return toast('استنى التقرير يحمل الأول');
-  openSheet(`<h3>تقرير ${t}</h3><p class="mut" style="margin:0 0 10px">${d}</p>${per?`<div class="note">الفترة: ${R.f===R.t?dayDmy(R.f):`من ${dayDmy(R.f)} إلى ${dayDmy(R.t)}`} (غيّرها من أعلى صفحة التقارير)</div>`:''}${docBtns('rep',key)}`)}
+  openSheet(`<h3>تقرير ${t}</h3><p class="mut" style="margin:0 0 10px">${d}</p>${per?`<div class="note">الفترة: ${R.f===R.t?dayDmy(R.f):`من ${dayDmy(R.f)} إلى ${dayDmy(R.t)}`} (غيّرها من أعلى صفحة التقارير)</div>`:''}${(()=>{let sp=null;try{sp=repSpec(key)}catch(e){console.error(e)}return sp?specHtml(sp):'<div class="empty">مش قادر أعرض التفاصيل دلوقتي.</div>'})()}${docBtns('rep',key)}`)}
+const tone=c=>c===DOC.good?'var(--good)':c===DOC.bad?'var(--bad)':'';
+const toneSt=c=>tone(c)?` style="color:${tone(c)}"`:'';
+/* the same report the image/PDF is drawn from, shown as a readable page inside the app (just to look) */
+function specHtml(sp){const secs=sp.sections||[{cols:sp.cols,rows:sp.rows,empty:sp.empty}];
+  const totL=l=>`<div class="card tot">${l.map(([a,v,big,c])=>`<div class="kv"><span>${big?`<b>${esc(a)}</b>`:esc(a)}</span><b${toneSt(c)}${big?' style="font-size:17px"':''}>${esc(v)}</b></div>`).join('')}</div>`;
+  return `<div class="rpv">${sp.kpis?`<div class="kpis">${sp.kpis.map(([l,v,c])=>`<div><span>${esc(l)}</span><b${toneSt(c)}>${esc(v)}</b></div>`).join('')}</div>`:''}
+${secs.map(x=>`${x.h?`<h4>${esc(x.h)}</h4>`:''}<div class="tw"><table><thead><tr>${x.cols.map(c=>`<th${c.n?' class="n"':''}>${esc(c.t)}</th>`).join('')}</tr></thead><tbody>
+${x.rows.length?x.rows.map(r=>`<tr${r.bold?' class="bd"':''}>${x.cols.map((c,j)=>`<td${c.n?' class="n"':''}${toneSt(r.tone&&r.tone[j])}>${esc(r.v[j]??'')}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${x.cols.length}" style="text-align:center;color:var(--mut)">${esc(x.empty||'مفيش حركات')}</td></tr>`}</tbody></table></div>
+${(x.totals||[]).length?totL(x.totals):''}`).join('')}
+${(sp.totals||[]).length?`<h4>الإجمالي</h4>`+totL(sp.totals):''}
+${sp.side?`<div class="card tot"><div class="kv"><span>${esc(sp.side[0])}</span><b${toneSt(sp.side[2])}>${esc(sp.side[1])}</b></div></div>`:''}
+${sp.note?`<div class="note">ملاحظة: ${esc(sp.note)}</div>`:''}</div>`}
 function repListHtml(){return `<div class="sec"><div class="sec-h"><h2>📄 تقارير للواتساب والطباعة</h2><span class="mut">صورة أو PDF باللوجو</span></div>
 <div class="list">${REPS.map(([k,t,d])=>`<button class="row" data-a="repdoc" data-id="${k}"><div class="main"><div class="t">${t}</div><div class="s">${d}</div></div><span class="tag">${PERIODIC.has(k)?'الفترة':'دلوقتي'}</span></button>`).join('')}</div></div>`}
 function settingsSheet(){openSheet(`<h3>الإعدادات</h3><label class="f"><span>اسم المحل (بيظهر في الفواتير)</span><input id="s_name" value="${esc(S.shop?.name||'')}"></label>
