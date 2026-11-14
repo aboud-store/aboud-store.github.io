@@ -411,6 +411,8 @@ function soft(){if(S.view==='inv'||S.sheetOpen||S.busy)return;render()}
 const KD={sale:{st:-1,w:1,b:1,pt:'c'},buy:{st:1,w:-1,b:1,pt:'s'},rsale:{st:1,w:-1,b:-1,pt:'c'},rbuy:{st:-1,w:1,b:-1,pt:'s'}};
 const KN={sale:'بيع',buy:'شراء',rsale:'مرتجع بيع',rbuy:'مرتجع شراء'};
 const isRet=k=>k==='rsale'||k==='rbuy';
+/* overpaid invoice (rest<0): the extra goes to the party's account (lowers what he owes / adds to his credit) */
+const OVL='زيادة نزلت في حسابه';const owed=i=>Math.max(0,i.rest||0);
 /* cost of selling q pieces: the pieces on the system go at the average cost; any pieces beyond what's on the system
    (stock is wrong until the جرد) go at the last purchase price, so profit stays close to the truth */
 function effCost(p,q){if(!p)return 0;q=num(q);const base=p.cost||p.lastCost||0,last=p.lastCost||p.cost||0,av=Math.max(0,num(p.qty));
@@ -543,7 +545,7 @@ ${low.length?`<div class="sec"><div class="sec-h"><h2>أصناف قربت تخل
 <div class="list">${feed.length?feed.map(f=>f.h).join(''):`<div class="empty"><b>لسه مفيش حركات</b>ابدأ بإضافة الأصناف من المخزن، وبعدين اعمل أول فاتورة بيع.</div>`}</div></div>`;
 }
 function invRow(i){const rt=isRet(i.kind);
- const sub=rt?(i.rest>0?` · اتخصم من الحساب ${fmt(i.rest)}`:'')+(i.refNo?` · من فاتورة #${i.refNo}`:''):(i.rest>0?` · باقي ${fmt(i.rest)} آجل`:'')+(i.ret&&Object.values(i.ret).some(v=>v>0)?' · عليها مرتجع':'');
+ const sub=rt?(i.rest>0?` · اتخصم من الحساب ${fmt(i.rest)}`:'')+(i.refNo?` · من فاتورة #${i.refNo}`:''):(i.rest>0?` · باقي ${fmt(i.rest)} آجل`:i.rest<0?` · ${OVL} ${fmt(-i.rest)}`:'')+(i.ret&&Object.values(i.ret).some(v=>v>0)?' · عليها مرتجع':'');
  return `<button class="row" data-a="showinv" data-id="${i.id}"><div class="main"><div class="t"><span class="tag ${rt?'ret':i.kind}">${KN[i.kind]} #${i.no}</span> ${esc(i.partyName)}</div><div class="s">${dshort(i.day)} · ${tm(i.ts)} · ${i.lines.length} صنف${sub}</div></div><div class="amt ${rt?'neg':''}">${rt?'−':''}${fmt(i.total)}${i.kind==='sale'||i.kind==='rsale'?`<small>ربح ${fmt(i.profit)}</small>`:''}</div></button>`}
 function moveRow(m){const plus=['collect','in','lret','borrow'].includes(m.type)||(m.type==='adj'&&m.amount>0);const nm=m.type==='transfer'?'تحويل':MOVE[m.type];
  return `<button class="row" data-a="showmove" data-id="${m.id}"><div class="main"><div class="t">${esc(nm)}${m.partyName?' · '+esc(m.partyName):''}${m.cat?' · '+esc(m.cat):''}</div><div class="s">${dshort(m.day)} · ${tm(m.ts)} · ${m.type==='transfer'||m.type==='close'?`من ${W[m.method]} لـ ${W[mvTo(m)]}`:W[m.method]}${m.note?' · '+esc(m.note):''}</div></div><div class="amt ${m.type==='transfer'||m.type==='close'?'':plus?'pos':'neg'}">${m.type==='transfer'||m.type==='close'?'':plus?'+':'−'}${fmt(Math.abs(m.amount))}</div></button>`}
@@ -664,7 +666,7 @@ async function loadReport(){
 <div class="kv"><span>خصومات للعملاء</span><b>${fmt(sum(sales,'disc'))}</b></div>
 <div class="kv"><span>مرتجعات بيع (${rs.length})</span><b class="neg">${fmt(sum(rs,'total'))}</b></div>
 <div class="kv"><span>تكلفة البضاعة المباعة (بعد المرتجع)</span><b>${fmt(salesT-gross)}</b></div>
-<div class="kv"><span>المبيعات الآجل (اتسجلت على العملاء)</span><b>${fmt(sum(sales,'rest'))}</b></div>
+<div class="kv"><span>المبيعات الآجل (اتسجلت على العملاء)</span><b>${fmt(sum(sales,owed))}</b></div>
 <div class="kv"><span>تحصيلات من العملاء</span><b>${fmt(sum(mv.filter(m=>m.type==='collect'),'amount'))}</b></div>
 <div class="kv"><span>مشتريات (${buys.length} فاتورة)</span><b>${fmt(sum(buys,'total'))}</b></div>
 ${rb.length?`<div class="kv"><span>مرتجع مشتريات للموردين (${rb.length})</span><b>${fmt(sum(rb,'total'))}</b></div>`:''}
@@ -870,7 +872,7 @@ ${rt?'':`<div class="kv"><span>خصم على الفاتورة</span><input id="d
 <div class="mini">${rt?'الفلوس رجعت إزاي':'طريقة الدفع'}</div>
 <div class="dk-pay">${['drawer','cash','insta','voda','credit','split'].map(k=>`<button class="${d.pm===k?'on':''}" data-a="pm" data-k="${k}">${PML[d.kind][k]}</button>`).join('')}</div>
 ${d.pm==='split'?splitHtml(d):d.pm==='credit'?'':`<div class="kv"><span>${rt?'المبلغ اللي رجع':'المدفوع'}</span><input id="d_paid" class="money" inputmode="decimal" value="${esc(d.paid||'')}" placeholder="${fmt(c.total)}"></div>`}
-<div class="kv" id="dt_restw" ${c.rest>0.001?'':'hidden'}><span>${PAYL[d.kind][3]}</span><b class="warn" id="dt_rest">${fmt(c.rest)}</b></div>
+<div class="kv" id="dt_restw" ${Math.abs(c.rest)>0.001?'':'hidden'}><span id="dt_restl">${c.rest<0&&!isRet(d.kind)?(d.partyId?OVL:'المدفوع زيادة'):PAYL[d.kind][3]}</span><b class="warn" id="dt_rest">${fmt(Math.abs(c.rest))}</b></div>
 <div id="dt_bal">${dBal(c)}</div>
 ${cashy&&d.kind==='sale'?`<div class="kv"><span>العميل دفع (للفكة)</span><input id="d_tend" class="money" inputmode="decimal" value="${esc(d.tend||'')}" placeholder="0"></div><div class="dk-chg"><span>الباقي للعميل (فكة)</span><b id="dt_chg">${fmt(Math.max(0,num(d.tend)-c.cash))}</b></div>`:''}
 <div id="d_err"></div></div>
@@ -886,7 +888,7 @@ function splitHtml(d){const out=d.kind==='buy'||d.kind==='rsale';
 <div class="mini" style="margin:-2px 0 6px">${out?'':'اكتب التحويل والكاش هيتحسب لوحده. '}الباقي بعد كده ${KD[d.kind].pt==='c'?'على العميل':'للمورد'}.</div>`}
 function dBal(c){const d=S.draft,pt=PT(d.partyId);if(!pt)return '';return `<div class="kv sm"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(ptBase(pt)+KD[d.kind].b*c.rest)}</b></div>`}
 function refreshDesk(){const d=S.draft;syncPay(d);const c=calc(d),t=(id,v)=>{const e=$('#'+id);if(e)e.textContent=v};
-  t('dt_sub',fmt(c.sub));t('dt_tot',fmt(c.total));t('dt_rest',fmt(c.rest));const w=$('#dt_restw');if(w)w.hidden=!(c.rest>0.001);
+  t('dt_sub',fmt(c.sub));t('dt_tot',fmt(c.total));t('dt_rest',fmt(Math.abs(c.rest)));t('dt_restl',c.rest<0&&!isRet(S.draft.kind)?(S.draft.partyId?OVL:'المدفوع زيادة'):PAYL[S.draft.kind][3]);const w=$('#dt_restw');if(w)w.hidden=!(Math.abs(c.rest)>0.001);
   const b=$('#dt_bal');if(b)b.innerHTML=dBal(c);t('dt_chg',fmt(Math.max(0,num(d.tend)-c.cash)));
   const pr=$('#dt_prof');if(pr){pr.textContent=fmt(c.profit);pr.className=c.profit<0?'neg':'pos'}
   const pd=$('#d_paid');if(pd)pd.placeholder=fmt(c.total);const sc=$('#d_scash');if(sc)sc.placeholder=fmt(autoCash(d));t('dk_q',fmt(sum(d.lines,l=>num(l.qty))));t('dk_ld',fmt(sum(d.lines,l=>num(l.disc))))}
@@ -941,7 +943,7 @@ ${rt?'':`<label class="f" style="margin:8px 0"><span>خصم</span><input id="d_d
 <div id="d_sum">${sumHtml()}</div>`}
 function sumHtml(){const d=S.draft,c=calc(d),pt=PT(d.partyId),K=KD[d.kind];
   if(!d.partyId&&!isRet(d.kind)&&!num(d.cash)&&c.total>0)return `<div class="kv"><span>${num(d.insta)||num(d.voda)?'الباقي كاش':'لو سبت الدفع فاضي'}</span><b>${fmt(Math.max(0,c.total-num(d.insta)-num(d.voda)))} في ${W[d.cashW||'cash']}</b></div>${d.kind==='sale'?`<div class="kv"><span>ربح الفاتورة</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`;
-  return `<div class="kv"><span>${PAYL[d.kind][3]}</span><b class="${c.rest>0?'warn':c.rest<0?'neg':''}">${fmt(c.rest)}</b></div>
+  return `<div class="kv"><span>${c.rest<-0.001&&!isRet(d.kind)?(d.partyId?OVL:'المدفوع زيادة'):PAYL[d.kind][3]}</span><b class="${c.rest>0?'warn':c.rest<0?(d.partyId&&!isRet(d.kind)?'pos':'neg'):''}">${fmt(Math.abs(c.rest))}</b></div>
 ${pt?`<div class="kv"><span>رصيد ${esc(pt.name)} بعد ${isRet(d.kind)?'المرتجع':'الفاتورة'}</span><b>${fmt(ptBase(pt)+K.b*c.rest)}</b></div>`:''}
 ${d.kind==='sale'||d.kind==='rsale'?`<div class="kv"><span>${d.kind==='sale'?'ربح الفاتورة':'الربح اللي هيتخصم'}</span><b class="${c.profit<0?'neg':'pos'}">${fmt(c.profit)}</b></div>`:''}`}
 function refreshTotals(){if(S.view==='inv'&&isDesk()&&$('#dt_tot')){refreshDesk();return}const s=$('#d_sum');if(s)s.innerHTML=sumHtml();const t=$('#d_tot .kv b');if(t)t.textContent=fmt(calc(S.draft).sub);const tt=$('#d_tot .kv.tot b');if(tt)tt.textContent=fmt(calc(S.draft).total)}
@@ -970,7 +972,7 @@ async function saveInvoice(next){
   const big=lines.find(l=>l.max!=null&&num(l.qty)>l.max+0.001);
   if(big)return fail(`«${esc(big.name)}»: اللي ممكن يرجع من الفاتورة الأصلية ${fmt(big.max)} بس.`);
   if(c.total<0)return fail('الخصم أكبر من إجمالي الفاتورة.');
-  if(c.rest<-0.001)return fail(rt?'الفلوس الراجعة أكتر من قيمة المرتجع.':'المدفوع أكتر من المطلوب. راجع الكاش والتحويلات.');
+  if(c.rest<-0.001&&(rt||!d.partyId))return fail(rt?'الفلوس الراجعة أكتر من قيمة المرتجع.':`المدفوع أكتر من المطلوب بـ ${fmt(-c.rest)}. اختار ${cust?'العميل':'المورد'} عشان الزيادة تنزل في حسابه، أو رجّع الباقي.`);
   if(c.rest>0.001&&!d.partyId)return fail(rt?`مفيش حساب يتخصم منه ${fmt(c.rest)}. اكتب الفلوس اللي رجعت كاملة، أو اختار ${cust?'العميل':'المورد'}.`:`فيه باقي ${fmt(c.rest)}. اختار ${cust?'العميل':'المورد'} عشان يتسجل على حسابه، أو خلّي الدفع كامل.`);
   const pt=PT(d.partyId);
   const inv={id:uid(),no:(S.shop.seq||0)+1,kind:d.kind,ts:Date.now(),day:today(),partyId:d.partyId||'',partyName:pt?pt.name:(cust?'عميل نقدي':'مورد نقدي'),
@@ -1004,7 +1006,7 @@ function copyBox(text,phone){const wa=phone?`https://wa.me/2${phone.replace(/\D/
 
 function invText(i){const pt=PT(i.partyId),cust=KD[i.kind].pt==='c',rt=isRet(i.kind);
   const pp=payParts(i),pb=pp.length>1?pp.map(([k,v])=>`\n  ${k==='drawer'||k==='cash'?'كاش':W[k]}: ${fmt(v)}`).join(''):'';
-  const pay=rt?`${paidOf(i)?`\nاترجع فلوس: ${fmt(paidOf(i))}${pb}`:''}${i.rest?`\nاتخصم من الحساب: ${fmt(i.rest)}`:''}`:`\nالمدفوع: ${fmt(paidOf(i))}${pb}${i.rest?`\nالباقي: ${fmt(i.rest)}`:''}`;
+  const pay=rt?`${paidOf(i)?`\nاترجع فلوس: ${fmt(paidOf(i))}${pb}`:''}${i.rest?`\nاتخصم من الحساب: ${fmt(i.rest)}`:''}`:`\nالمدفوع: ${fmt(paidOf(i))}${pb}${i.rest>0?`\nالباقي: ${fmt(i.rest)}`:i.rest<0?`\n${OVL}: ${fmt(-i.rest)}`:''}`;
   return `${S.shop.name}\n${rt?KN[i.kind]:'فاتورة '+KN[i.kind]} رقم ${i.no}${i.refNo?` (من فاتورة ${i.refNo})`:''}\nالتاريخ: ${i.day}\n${cust?'العميل':'المورد'}: ${i.partyName}\n────────────\n${i.lines.map(l=>`${l.name}\n  ${fmt(l.qty)} × ${fmt(l.price)} = ${fmt(l.qty*l.price)}`).join('\n')}\n────────────\n${rt?'قيمة المرتجع':'الإجمالي'}: ${fmt(i.sub)}${i.disc?`\nخصم: ${fmt(i.disc)}\nالمطلوب: ${fmt(i.total)}`:rt?'':`\nالمطلوب: ${fmt(i.total)}`}${pay}${pt&&cust?`\nرصيد حسابك الحالي: ${fmt(pt.bal)}`:''}`}
 function showInvoice(id,obj){const i=obj||S.invoices.find(x=>x.id===id);if(!i)return;docPrep();const cust=KD[i.kind].pt==='c',rt=isRet(i.kind);
   const ret=i.ret||{},hasRet=Object.values(ret).some(v=>v>0),canRet=!rt&&i.lines.some((l,k)=>remaining(i,k)>0);
@@ -1198,13 +1200,13 @@ const RLOGO='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAjAAAAC6AQAAAACYPkpVA
 function receipt80(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),paid=paidOf(i),pp=payParts(i);
   const f2=v=>(+v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),d=new Date(i.ts),p2=x=>String(x).padStart(2,'0');
   const dt=`${d.getFullYear()}/${p2(d.getMonth()+1)}/${p2(d.getDate())}`,ht=`${d.getHours()%12||12}:${p2(d.getMinutes())} ${d.getHours()<12?'AM':'PM'}`;
-  const kindTxt=rt?(i.rest?'خصم من الحساب':'نقدي'):(i.rest?(paid?'نقدي + آجل':'آجل'):'نقدي');
+  const kindTxt=rt?(i.rest?'خصم من الحساب':'نقدي'):(i.rest>0?(paid?'نقدي + آجل':'آجل'):'نقدي');
   const T=(l,v,c='')=>`<tr class="t ${c}"><td colspan="3" class="l">${l}</td><td class="v">${v}</td></tr>`;
   const pl=k=>k==='drawer'||k==='cash'?'كاش':W[k];
   let tot='';if(i.disc)tot+=T('الإجمالي',f2(i.sub))+T('الخصم',f2(i.disc));
   tot+=T(rt?'قيمة المرتجع':'المطلوب',f2(i.total),'big');
   if(pp.length>1)tot+=pp.map(([k,v])=>T(pl(k),f2(v))).join('');
-  tot+=rt?(paid?T('اترجع فلوس',f2(paid)):'')+(i.rest?T('اتخصم من الحساب',f2(i.rest)):''):T(pp.length===1&&pp[0][0]!=='drawer'&&pp[0][0]!=='cash'?'المدفوع '+W[pp[0][0]]:'المدفوع',f2(paid))+(i.rest?T('الباقي آجل',f2(i.rest)):'');
+  tot+=rt?(paid?T('اترجع فلوس',f2(paid)):'')+(i.rest?T('اتخصم من الحساب',f2(i.rest)):''):T(pp.length===1&&pp[0][0]!=='drawer'&&pp[0][0]!=='cash'?'المدفوع '+W[pp[0][0]]:'المدفوع',f2(paid))+(i.rest>0?T('الباقي آجل',f2(i.rest)):i.rest<0?T('زيادة نزلت في الحساب',f2(-i.rest)):'');
   if(pt&&i.balBefore!=null)tot+=T('الرصيد السابق',f2(i.balBefore))+T(cust?'إجمالي الحساب':'الرصيد بعد الفاتورة',f2(i.balAfter),'big');
   const phones=(sh.phone||'').split(/[\s,،\/-]+/).filter(x=>x.length>3);
   const qr=qrSvg(`${sh.name||'Aboud Store'}\n${rt?KN[i.kind]:'فاتورة '+KN[i.kind]} ${i.no}\n${dt} ${ht}\n${rt?'قيمة المرتجع':'المطلوب'} ${f2(i.total)}${phones.length?'\n'+phones.join(' '):''}`,110);
@@ -1230,7 +1232,7 @@ function printInvoice(i){const sh=S.shop||{},cust=KD[i.kind].pt==='c',rt=isRet(i
 <div class="tot"><div><span>الإجمالي</span><b>${fmt(i.sub)}</b></div>${i.disc?`<div><span>خصم</span><b>${fmt(i.disc)}</b></div>`:''}
 <div class="big"><span>${rt?'قيمة المرتجع':'الصافي'}</span><b>${fmt(i.total)}</b></div>
 ${rt?`${paid?`<div><span>اترجع فلوس</span><b>${fmt(paid)}</b></div>${pdet}`:''}${i.rest?`<div><span>اتخصم من الحساب</span><b>${fmt(i.rest)}</b></div>`:''}`
- :`<div><span>المدفوع</span><b>${fmt(paid)}</b></div>${pdet}${i.rest?`<div><span>الباقي آجل</span><b>${fmt(i.rest)}</b></div>`:''}`}
+ :`<div><span>المدفوع</span><b>${fmt(paid)}</b></div>${pdet}${i.rest>0?`<div><span>الباقي آجل</span><b>${fmt(i.rest)}</b></div>`:i.rest<0?`<div><span>${OVL}</span><b>${fmt(-i.rest)}</b></div>`:''}`}
 ${pt&&i.balBefore!=null?`<div><span>الرصيد السابق</span><b>${fmt(i.balBefore)}</b></div><div class="big"><span>${cust?'إجمالي المطلوب على الحساب':'الرصيد بعد الفاتورة'}</span><b>${fmt(i.balAfter)}</b></div>`:''}</div>
 ${i.note?`<div style="margin-top:8px">ملاحظة: ${esc(i.note)}</div>`:''}
 <div class="foot">${esc(sh.foot||'شكراً لتعاملكم معنا')}</div></div>`;
@@ -1338,10 +1340,10 @@ function stmtSpec(st,from){const p=st.p,c=p.type!=='s',d=stmtData(st,from),L=c?[
     totals:[...(d.open||from?[['رصيد سابق',fmt(d.open)]]:[]),['إجمالي '+L[0],fmt(d.inc),0,DOC.bad],['إجمالي '+L[1],fmt(d.dec),0,DOC.good],[bl(d.end),fmt(Math.abs(d.end)),1,d.end>0===c?DOC.bad:d.end?DOC.good:DOC.ink]],
     side:[bl(d.end),fmt(Math.abs(d.end))+' جنيه',d.end>0===c?DOC.bad:d.end?DOC.good:DOC.ink]}}
 function invSpec(i){const cust=KD[i.kind].pt==='c',rt=isRet(i.kind),pt=PT(i.partyId),paid=paidOf(i),pp=payParts(i),d=new Date(i.ts);
-  const kindTxt=rt?(i.rest?'خصم من الحساب':'نقدي'):(i.rest?(paid?'نقدي + آجل':'آجل'):'نقدي'),pl=k=>k==='drawer'||k==='cash'?'كاش':W[k];
+  const kindTxt=rt?(i.rest?'خصم من الحساب':'نقدي'):(i.rest>0?(paid?'نقدي + آجل':'آجل'):'نقدي'),pl=k=>k==='drawer'||k==='cash'?'كاش':W[k];
   const tot=[];if(i.disc)tot.push(['الإجمالي',fmt(i.sub)],['الخصم',fmt(i.disc)]);tot.push([rt?'قيمة المرتجع':'الصافي',fmt(i.total),1]);
   if(rt){if(paid)tot.push(['اترجع فلوس',fmt(paid)]);if(i.rest)tot.push(['اتخصم من الحساب',fmt(i.rest)])}
-  else{if(pp.length>1)pp.forEach(([k,v])=>tot.push(['مدفوع '+pl(k),fmt(v)]));else tot.push([pp.length&&pp[0][0]!=='drawer'&&pp[0][0]!=='cash'?'المدفوع '+W[pp[0][0]]:'المدفوع',fmt(paid),0,DOC.good]);if(i.rest)tot.push(['الباقي آجل',fmt(i.rest),0,DOC.bad])}
+  else{if(pp.length>1)pp.forEach(([k,v])=>tot.push(['مدفوع '+pl(k),fmt(v)]));else tot.push([pp.length&&pp[0][0]!=='drawer'&&pp[0][0]!=='cash'?'المدفوع '+W[pp[0][0]]:'المدفوع',fmt(paid),0,DOC.good]);if(i.rest>0)tot.push(['الباقي آجل',fmt(i.rest),0,DOC.bad]);else if(i.rest<0)tot.push([OVL,fmt(-i.rest),0,DOC.good])}
   if(pt&&i.balBefore!=null)tot.push(['الرصيد السابق',fmt(i.balBefore)],[cust?'إجمالي الحساب':'الرصيد بعد الفاتورة',fmt(i.balAfter),1]);
   const nowBal=pt&&cust&&(i.balBefore==null||r2(pt.bal)!==r2(i.balAfter));
   return {title:rt?KN[i.kind]:'فاتورة '+KN[i.kind],sub:`رقم ${i.no}`,file:`${rt?KN[i.kind]:'فاتورة '+KN[i.kind]} ${i.no}${i.partyId?' - '+i.partyName:''}`,
@@ -1399,7 +1401,7 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
       const [a,b]=recLabel(x);return {v:[whenTxt(x.ts,multi),a,b,i?fmt(i):'',o?fmt(o):''],tone:{3:DOC.good,4:DOC.bad}}});
     const secs=[{h:'ملخص الفترة',cols:[{t:'البند',w:0},{t:'المبلغ',w:260,n:1}],rows:[
       ['صافي المبيعات',salesT],['مجمل الربح',gross],['المصاريف',-expT],['صافي الربح',r2(gross-expT)],['المشتريات',r2(sum(buys,'total')-sum(rb,'total'))],
-      ['تحصيلات من العملاء',r2(sum(mv.filter(m=>m.type==='collect'),'amount'))],['سداد للموردين',r2(sum(mv.filter(m=>m.type==='pay'),'amount'))],['المبيعات الآجل',r2(sum(sales,'rest'))]].map(([a,v],k)=>({v:[a,fmt(v)],tone:{1:k===1||k===3?sgnTone(v):k===2&&v?DOC.bad:DOC.ink},bold:k===3}))},
+      ['تحصيلات من العملاء',r2(sum(mv.filter(m=>m.type==='collect'),'amount'))],['سداد للموردين',r2(sum(mv.filter(m=>m.type==='pay'),'amount'))],['المبيعات الآجل',r2(sum(sales,owed))]].map(([a,v],k)=>({v:[a,fmt(v)],tone:{1:k===1||k===3?sgnTone(v):k===2&&v?DOC.bad:DOC.ink},bold:k===3}))},
       {h:'الحركة على كل خزنة',cols:[{t:'الخزنة',w:0},{t:'داخل',w:200,n:1},{t:'خارج',w:200,n:1},{t:'الصافي',w:200,n:1},{t:'الرصيد دلوقتي',w:220,n:1}],
        rows:WK.map(k=>{const b=box[k];return {v:[W[k],fmt(b.i),fmt(b.o),fmt(b.i-b.o),fmt(S.shop?.[k]||0)],tone:{1:DOC.good,2:DOC.bad,3:sgnTone(b.i-b.o)}}}),
        totals:[['إجمالي الفلوس في كل الخزن دلوقتي',fmt(sum(WK,k=>S.shop?.[k]||0)),1]]}];
@@ -1417,7 +1419,7 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
   if(key==='sales'){const list=[...sales,...rs].sort((a,b)=>a.ts-b.ts);
     return {...base,kpis:[['صافي المبيعات',fmt(salesT)],['مجمل الربح',fmt(gross),sgnTone(gross)],['عدد الفواتير',String(sales.length)+(rs.length?` + ${rs.length} مرتجع`:'')],['متوسط الفاتورة',fmt(sales.length?sum(sales,'total')/sales.length:0)]],
       sections:[{h:'فواتير البيع',cols:[{t:'رقم',w:90,n:1},{t:multi?'التاريخ':'الوقت',w:multi?170:130,n:1},{t:'العميل',w:0},{t:'الصافي',w:150,n:1},{t:'المدفوع',w:140,n:1},{t:'آجل',w:130,n:1},{t:'الربح',w:130,n:1}],
-        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest?fmt(sg*i.rest):'',fmt(i.profit||0)],tone:{3:rt?DOC.bad:DOC.ink,5:DOC.bad,6:sgnTone(i.profit||0)}}}),empty:'مفيش مبيعات في الفترة دي'}],
+        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest>0?fmt(sg*i.rest):'',fmt(i.profit||0)],tone:{3:rt?DOC.bad:DOC.ink,5:DOC.bad,6:sgnTone(i.profit||0)}}}),empty:'مفيش مبيعات في الفترة دي'}],
       totals:[['إجمالي المبيعات قبل الخصم',fmt(sum(sales,'sub'))],['خصومات',fmt(sum(sales,'disc'))],['مرتجعات',fmt(sum(rs,'total')),0,DOC.bad],['صافي المبيعات',fmt(salesT),1],['تكلفة البضاعة',fmt(salesT-gross)],['مجمل الربح',fmt(gross),1,sgnTone(gross)]]}}
   if(key==='items'){const it={};const add=(l,s)=>{const k=l.pid||l.name,o=it[k]||(it[k]={name:l.name,q:0,rev:0,cost:0});o.q+=s*l.qty;o.rev+=s*l.qty*l.price;o.cost+=s*l.qty*(l.cost||0)};
     sales.forEach(i=>i.lines.forEach(l=>add(l,1)));rs.forEach(i=>i.lines.forEach(l=>add(l,-1)));const a=Object.values(it).filter(x=>x.q||x.rev).sort((x,y)=>(y.rev-y.cost)-(x.rev-x.cost));
@@ -1433,9 +1435,9 @@ function repSpec(key){const R=S.repData||{},f=R.f,t=R.t,multi=f!==t;const per=f=
          rows:exp.map(m=>({v:[whenTxt(m.ts,multi),m.cat||'أخرى',m.note||'',W[m.method]||'',fmt(m.amount)],tone:{4:DOC.bad}})),empty:'مفيش مصاريف'}],
       totals:[['إجمالي المصاريف',fmt(expT),1,DOC.bad]]}}
   if(key==='buy'){const list=[...buys,...rb].sort((a,b)=>a.ts-b.ts),net=r2(sum(buys,'total')-sum(rb,'total'));
-    return {...base,kpis:[['صافي المشتريات',fmt(net)],['عدد الفواتير',String(buys.length)+(rb.length?` + ${rb.length} مرتجع`:'')],['المدفوع',fmt(sum(buys,paidOf)-sum(rb,paidOf))],['آجل للموردين',fmt(sum(buys,'rest')),DOC.bad]],
+    return {...base,kpis:[['صافي المشتريات',fmt(net)],['عدد الفواتير',String(buys.length)+(rb.length?` + ${rb.length} مرتجع`:'')],['المدفوع',fmt(sum(buys,paidOf)-sum(rb,paidOf))],['آجل للموردين',fmt(sum(buys,owed)),DOC.bad]],
       sections:[{cols:[{t:'رقم',w:90,n:1},{t:multi?'التاريخ':'الوقت',w:multi?170:130,n:1},{t:'المورد',w:0},{t:'الإجمالي',w:160,n:1},{t:'المدفوع',w:150,n:1},{t:'آجل',w:140,n:1}],
-        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest?fmt(sg*i.rest):''],tone:{3:rt?DOC.bad:DOC.ink}}}),empty:'مفيش مشتريات في الفترة دي'}],
+        rows:list.map(i=>{const rt=isRet(i.kind),sg=rt?-1:1;return {v:[String(i.no),whenTxt(i.ts,multi),(rt?'مرتجع · ':'')+i.partyName,fmt(sg*i.total),fmt(sg*paidOf(i)),i.rest>0?fmt(sg*i.rest):''],tone:{3:rt?DOC.bad:DOC.ink}}}),empty:'مفيش مشتريات في الفترة دي'}],
       totals:[['المشتريات',fmt(sum(buys,'total'))],['مرتجع مشتريات',fmt(sum(rb,'total'))],['صافي المشتريات',fmt(net),1]]}}
   if(key==='cp'){const col=mv.filter(m=>m.type==='collect'),pay=mv.filter(m=>m.type==='pay'),cols=[{t:multi?'التاريخ':'الوقت',w:multi?190:140,n:1},{t:'الاسم',w:0},{t:'في',w:180},{t:'ملاحظة',w:260},{t:'المبلغ',w:160,n:1}];
     const rw=(m,tc)=>({v:[whenTxt(m.ts,multi),m.partyName||'',W[m.method]||'',m.note||'',fmt(m.amount)],tone:{4:tc}});
